@@ -1,0 +1,19 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Token {
+  id        String   @id @default(cuid())
+  name      String
+  symbol    String
+  category  String
+  marketCap Float?
+  volume24h Float?
+  price     Float?
+  createdAt DateTime @default(now())
+}
