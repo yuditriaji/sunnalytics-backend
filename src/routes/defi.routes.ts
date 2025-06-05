@@ -1,11 +1,11 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 // Get all DeFi tokens
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
     const defiTokens = await prisma.token.findMany({
       where: {
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get a specific DeFi token by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const defiToken = await prisma.token.findUnique({
@@ -39,7 +39,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create a new DeFi token
-router.post('/', async (req, res) => {
+router.post('/', async (req: Request, res: Response) => {
   try {
     const { name, symbol, marketCap, volume24h, price } = req.body;
     
@@ -62,7 +62,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update a DeFi token
-router.put('/:id', async (req, res) => {
+router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, symbol, marketCap, volume24h, price } = req.body;
@@ -86,7 +86,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Delete a DeFi token
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     

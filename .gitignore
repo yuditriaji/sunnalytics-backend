@@ -1,0 +1,5 @@
+.env
+node_modules
+dist
+api-integration.md
+sunnalytics-backend.md

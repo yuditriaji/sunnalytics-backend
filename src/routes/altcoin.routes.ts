@@ -1,18 +1,60 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { fetchMarketData } from '../api/coingecko';
+import { cache } from '../services/cache';
+import { calculateTokenMetrics } from '../utils/tokenAnalytics';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Get all altcoins
-router.get('/', async (req, res) => {
+// Get all altcoins with market data and analytics
+router.get('/', async (req: Request, res: Response) => {
   try {
+    // Try to get from cache first
+    const cachedData = cache.get<any[]>('altcoins_market_data');
+    let marketData;
+
+    if (!cachedData) {
+      // Fetch fresh data from CoinGecko
+      marketData = await fetchMarketData();
+      cache.set('altcoins_market_data', marketData, 300); // Cache for 5 minutes
+    } else {
+      marketData = cachedData;
+    }
+
+    // Get database records
     const altcoins = await prisma.token.findMany({
-      where: {
-        category: 'altcoin'
-      }
+      where: { category: 'altcoin' }
     });
-    res.json(altcoins);
+
+    // Enrich database records with market data and analytics
+    const enrichedAltcoins = altcoins.map(token => {
+      const marketInfo = marketData.find(m => 
+        m.symbol.toLowerCase() === token.symbol.toLowerCase()
+      );
+
+      if (marketInfo) {
+        const metrics = calculateTokenMetrics({
+          price: token.price || marketInfo.current_price,
+          marketCap: token.marketCap || marketInfo.market_cap,
+          volume24h: token.volume24h || marketInfo.total_volume,
+          circulatingSupply: marketInfo.circulating_supply,
+          totalSupply: marketInfo.total_supply
+        });
+
+        return {
+          ...token,
+          ...metrics,
+          price: token.price || marketInfo.current_price,
+          marketCap: token.marketCap || marketInfo.market_cap,
+          volume24h: token.volume24h || marketInfo.total_volume
+        };
+      }
+
+      return token;
+    });
+
+    res.json(enrichedAltcoins);
   } catch (error) {
     console.error('Error fetching altcoins:', error);
     res.status(500).json({ error: 'Failed to fetch altcoins' });
@@ -20,7 +62,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get a specific altcoin by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const altcoin = await prisma.token.findUnique({
@@ -39,7 +81,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create a new altcoin
-router.post('/', async (req, res) => {
+router.post('/', async (req: Request, res: Response) => {
   try {
     const { name, symbol, marketCap, volume24h, price } = req.body;
     
@@ -62,7 +104,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update an altcoin
-router.put('/:id', async (req, res) => {
+router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, symbol, marketCap, volume24h, price } = req.body;
@@ -86,7 +128,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Delete an altcoin
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     

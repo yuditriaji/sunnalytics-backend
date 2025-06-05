@@ -1,0 +1,29 @@
+{"level":"error","message":"Failed to generate Bitquery access token: Request failed with status code 401","timestamp":"2025-06-03T16:52:54.699Z"}
+{"level":"error","message":"Error refreshing tokens: Request failed with status code 401","timestamp":"2025-06-03T16:52:54.700Z"}
+{"level":"error","message":"DeBank API error, attempt 1: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T16:52:57.461Z"}
+{"level":"error","message":"DeBank API error, attempt 2: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T16:53:00.241Z"}
+{"level":"error","message":"DeBank API error, attempt 3: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T16:53:03.320Z"}
+{"level":"error","message":"Failed to generate Bitquery access token: Request failed with status code 401","timestamp":"2025-06-03T16:57:28.791Z"}
+{"level":"error","message":"Error refreshing tokens: Request failed with status code 401","timestamp":"2025-06-03T16:57:28.799Z"}
+{"level":"error","message":"DeBank API error, attempt 1: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T16:57:30.613Z"}
+{"level":"error","message":"DeBank API error, attempt 2: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T16:57:33.477Z"}
+{"level":"error","message":"DeBank API error, attempt 3: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T16:57:37.275Z"}
+{"level":"error","message":"DeBank API error, attempt 1: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T17:09:04.943Z"}
+{"level":"error","message":"Bitquery API error, attempt 1: Request failed with status code 401","timestamp":"2025-06-03T17:09:06.705Z"}
+{"level":"error","message":"DeBank API error, attempt 2: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T17:09:07.347Z"}
+{"level":"error","message":"DeBank API error, attempt 3: getaddrinfo ENOTFOUND openapi.debank.com","timestamp":"2025-06-03T17:09:09.416Z"}
+{"level":"error","message":"Error refreshing tokens: Failed to fetch DeBank data after retries","timestamp":"2025-06-03T17:09:09.422Z"}
+{"level":"error","message":"Bitquery API error, attempt 2: Request failed with status code 401","timestamp":"2025-06-03T17:09:09.807Z"}
+{"level":"error","message":"Bitquery API error, attempt 3: Request failed with status code 401","timestamp":"2025-06-03T17:09:13.505Z"}
+{"level":"error","message":"Bitquery API error, attempt 1: Bitquery API returned errors: [{\"message\":\"Cannot query field \\\"ethereum\\\" on type \\\"RootQuery\\\".\",\"locations\":[{\"line\":3,\"column\":7}]}]","timestamp":"2025-06-03T17:57:10.949Z"}
+{"level":"error","message":"Bitquery API error, attempt 2: Bitquery API returned errors: [{\"message\":\"Cannot query field \\\"ethereum\\\" on type \\\"RootQuery\\\".\",\"locations\":[{\"line\":3,\"column\":7}]}]","timestamp":"2025-06-03T17:57:13.826Z"}
+{"level":"error","message":"Bitquery API error, attempt 3: Bitquery API returned errors: [{\"message\":\"Cannot query field \\\"ethereum\\\" on type \\\"RootQuery\\\".\",\"locations\":[{\"line\":3,\"column\":7}]}]","timestamp":"2025-06-03T17:57:16.492Z"}
+{"level":"error","message":"Error refreshing tokens: Failed to fetch Bitquery data after retries","timestamp":"2025-06-03T17:57:16.493Z"}
+{"level":"error","message":"Bitquery API error, attempt 1: Bitquery API returned errors: [{\"message\":\"Field does not exist on type. Please check your query.\",\"locations\":[{\"line\":4,\"column\":9}],\"path\":[\"query\",\"solana\",\"dexTrades\"],\"extensions\":{\"code\":\"undefinedField\",\"typeName\":\"Solana\",\"fieldName\":\"dexTrades\"}}], Response: {}","timestamp":"2025-06-03T18:01:49.344Z"}
+{"level":"error","message":"Bitquery API error, attempt 2: Bitquery API returned errors: [{\"message\":\"Field does not exist on type. Please check your query.\",\"locations\":[{\"line\":4,\"column\":9}],\"path\":[\"query\",\"solana\",\"dexTrades\"],\"extensions\":{\"code\":\"undefinedField\",\"typeName\":\"Solana\",\"fieldName\":\"dexTrades\"}}], Response: {}","timestamp":"2025-06-03T18:01:53.757Z"}
+{"level":"error","message":"Bitquery API error, attempt 3: Bitquery API returned errors: [{\"message\":\"Field does not exist on type. Please check your query.\",\"locations\":[{\"line\":4,\"column\":9}],\"path\":[\"query\",\"solana\",\"dexTrades\"],\"extensions\":{\"code\":\"undefinedField\",\"typeName\":\"Solana\",\"fieldName\":\"dexTrades\"}}], Response: {}","timestamp":"2025-06-03T18:01:56.757Z"}
+{"level":"error","message":"Bitquery fetch failed: Failed to fetch Bitquery data after retries","timestamp":"2025-06-03T18:01:56.757Z"}
+{"level":"error","message":"Bitquery API error, attempt 1: Bitquery API returned errors: [{\"message\":\"Field does not exist on type. Please check your query.\",\"locations\":[{\"line\":4,\"column\":9}],\"path\":[\"query\",\"solana\",\"dexTrades\"],\"extensions\":{\"code\":\"undefinedField\",\"typeName\":\"Solana\",\"fieldName\":\"dexTrades\"}}], Response: {}","timestamp":"2025-06-04T14:51:05.455Z"}
+{"level":"error","message":"Bitquery API error, attempt 2: Bitquery API returned errors: [{\"message\":\"Field does not exist on type. Please check your query.\",\"locations\":[{\"line\":4,\"column\":9}],\"path\":[\"query\",\"solana\",\"dexTrades\"],\"extensions\":{\"code\":\"undefinedField\",\"typeName\":\"Solana\",\"fieldName\":\"dexTrades\"}}], Response: {}","timestamp":"2025-06-04T14:51:10.107Z"}
+{"level":"error","message":"Bitquery API error, attempt 3: Bitquery API returned errors: [{\"message\":\"Field does not exist on type. Please check your query.\",\"locations\":[{\"line\":4,\"column\":9}],\"path\":[\"query\",\"solana\",\"dexTrades\"],\"extensions\":{\"code\":\"undefinedField\",\"typeName\":\"Solana\",\"fieldName\":\"dexTrades\"}}], Response: {}","timestamp":"2025-06-04T14:51:14.885Z"}
+{"level":"error","message":"Bitquery fetch failed: Failed to fetch Bitquery data after retries","timestamp":"2025-06-04T14:51:14.887Z"}
