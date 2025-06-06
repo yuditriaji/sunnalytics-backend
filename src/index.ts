@@ -14,7 +14,7 @@ const app = express();
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'sunnalytics.vercel.app'],
+  origin: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'https://sunnalytics.vercel.app'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
