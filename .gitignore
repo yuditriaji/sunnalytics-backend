@@ -1,11 +1,18 @@
+# dependencies
+node_modules/
+logs/
+
+# production
+dist/
+
+# environment
 .env
-node_modules
-dist
-api-integration.md
-sunnalytics-backend.md
-combine_files.py
-generate_tree.py
-sunnalytics-backend.txt
-tree.txt
-combined.log
-error.log
+
+# misc
+.DS_Store
+*.log
+
+# others
+*.py
+*.md
+*.txt
