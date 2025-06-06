@@ -1,7 +1,7 @@
 import os
 
 # Output file name
-output_file = "all_files_combined.txt"
+output_file = "sunnalytics-backend.txt"
 
 # Folders to exclude
 excluded_dirs = {'.git', 'node_modules', 'prisma'}
@@ -10,7 +10,7 @@ excluded_dirs = {'.git', 'node_modules', 'prisma'}
 excluded_exts = {'.md'}
 
 # Specific filenames to exclude
-excluded_files = {'.env', 'combine_files.py'}
+excluded_files = {'.env', 'combine_files.py','generate_tree.py'}
 
 with open(output_file, 'w', encoding='utf-8') as out:
     for root, dirs, files in os.walk(".", topdown=True):

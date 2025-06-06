@@ -1,0 +1,62 @@
+Project Tree (excluding node_modules, .next, package-lock.json):
+
+├── .env
+├── .gitignore
+├── all_files_combined.txt
+├── api-integration.md
+├── combine_files.py
+├── dist
+│   ├── api
+│   │   ├── bitquery.js
+│   │   ├── coingecko.js
+│   │   └── debank.js
+│   ├── controllers
+│   │   └── tokenController.js
+│   ├── index.js
+│   ├── routes
+│   │   ├── altcoin.routes.js
+│   │   ├── defi.routes.js
+│   │   ├── memecoin.routes.js
+│   │   └── token.routes.js
+│   ├── services
+│   │   ├── cache.js
+│   │   ├── logger.js
+│   │   └── prisma.js
+│   └── utils
+│       ├── tokenAnalytics.js
+│       └── validation.js
+├── generate_tree.py
+├── package.json
+├── prisma
+│   ├── migrations
+│   │   ├── 20250602155412_your_migration_name
+│   │   │   └── migration.sql
+│   │   ├── 20250603172717_add_symbol_unique
+│   │   │   └── migration.sql
+│   │   ├── 20250604174835_add_transfer_volume
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   └── schema.prisma
+├── src
+│   ├── api
+│   │   ├── bitquery.ts
+│   │   ├── coingecko.ts
+│   │   └── debank.ts
+│   ├── controllers
+│   │   └── tokenController.ts
+│   ├── index.ts
+│   ├── routes
+│   │   ├── altcoin.routes.ts
+│   │   ├── defi.routes.ts
+│   │   ├── memecoin.routes.ts
+│   │   └── token.routes.ts
+│   ├── services
+│   │   ├── cache.ts
+│   │   ├── logger.ts
+│   │   └── prisma.ts
+│   └── utils
+│       ├── tokenAnalytics.ts
+│       └── validation.ts
+├── sunnalytics-backend.md
+├── tree.txt
+└── tsconfig.json

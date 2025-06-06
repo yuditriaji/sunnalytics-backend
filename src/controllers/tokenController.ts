@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { logger } from '../services/logger';
 import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import axios from 'axios';
+import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 
 const prisma = new PrismaClient();
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
@@ -54,7 +55,7 @@ export async function refreshTokens(req: Request, res: Response) {
       const bitqueryToken = bitqueryTokens.find(b => b.address === token.platforms?.solana || b.symbol.toLowerCase() === token.symbol);
       const cgToken = coingeckoMap.get(token.id) || coingeckoMap.get(token.platforms?.solana);
 
-      const symbol = token.symbol.toLowerCase(); // Normalize symbol
+      const symbol = token.symbol.toLowerCase();
       await prisma.token.upsert({
         where: { symbol },
         update: {
@@ -80,14 +81,6 @@ export async function refreshTokens(req: Request, res: Response) {
       });
     }
 
-    // Delete outdated USDC entry
-    await prisma.token.deleteMany({
-      where: {
-        symbol: 'USDC',
-        id: 'd5549ba5-643d-47a1-bafc-2d515a06e8f6'
-      }
-    });
-
     await prisma.$disconnect();
     res.json({ message: 'Token data refreshed successfully', coingeckoStatus, bitqueryStatus });
   } catch (error: any) {
@@ -104,7 +97,24 @@ export async function getTokens(req: Request, res: Response) {
       where: category ? { category: category as string } : undefined,
       orderBy: { updatedAt: 'desc' }
     });
-    res.json(tokens);
+
+    // Calculate metrics for each token
+    const enrichedTokens = tokens.map(token => {
+      const metrics = calculateTokenMetrics({
+        price: token.price || 0,
+        marketCap: token.marketCap || 0,
+        volume24h: token.volume24h || 0,
+        circulatingSupply: undefined, // Requires CoinGecko data integration
+        totalSupply: undefined,      // Requires CoinGecko data integration
+        targetMarketCap: undefined   // Optional, can be added if defined
+      });
+      return {
+        ...token,
+        ...metrics
+      };
+    });
+
+    res.json(enrichedTokens);
   } catch (error: any) {
     logger.error(`Error fetching tokens: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch tokens' });
