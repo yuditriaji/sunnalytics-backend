@@ -8,14 +8,26 @@ datasource db {
 }
 
 model Token {
-  id                String    @id @default(uuid())
-  name              String
-  symbol            String    @unique
-  category          String
-  price             Float?
-  marketCap         Float?
-  volume24h         Float?
-  transferVolume24h Float?    // Added
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                  String        @id @default(uuid())
+  name                String
+  symbol              String        @unique
+  category            String
+  price               Float?
+  marketCap           Float?
+  volume24h           Float?
+  transferVolume24h   Float?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  histories           TokenHistory[]
+}
+
+model TokenHistory {
+  id          String   @id @default(uuid())
+  tokenId     String
+  price       Float?
+  marketCap   Float?
+  volume24h   Float?
+  timestamp   DateTime @default(now())
+  token       Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  @@index([tokenId, timestamp])
 }

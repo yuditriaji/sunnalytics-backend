@@ -1,40 +1,24 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../services/logger';
+import { fetchMarketData, CoinGeckoToken } from '../api/coingecko';
 import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
-import axios from 'axios';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 
 const prisma = new PrismaClient();
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
-async function fetchCoinGeckoData(): Promise<any[]> {
-  try {
-    const response = await axios.get(`${COINGECKO_BASE}/coins/markets`, {
-      params: {
-        vs_currency: 'usd',
-        per_page: 100,
-        page: 1,
-        price_change_percentage: '24h'
-      },
-      timeout: 5000
-    });
-    logger.info('CoinGecko API call successful, attempt 1');
-    return response.data;
-  } catch (error: any) {
-    logger.error(`CoinGecko API error: ${error.message}`);
-    throw error;
-  }
-}
-
 export async function refreshTokens(req: Request, res: Response) {
   try {
-    const coingeckoData = await fetchCoinGeckoData();
+    const coingeckoData = await fetchMarketData();
     const bitqueryTokens = await fetchBitqueryTokens();
     let coingeckoStatus = 'success';
     let bitqueryStatus = bitqueryTokens.length > 0 ? 'success' : 'failed';
 
-    const coingeckoMap = new Map<string, any>();
+    logger.info(`Fetched ${coingeckoData.length} tokens from CoinGecko`);
+    logger.info(`Fetched ${bitqueryTokens.length} tokens from Bitquery`);
+
+    const coingeckoMap = new Map<string, CoinGeckoToken>();
     for (const token of coingeckoData) {
       coingeckoMap.set(token.id, token);
       if (token.platforms?.solana) {
@@ -42,47 +26,70 @@ export async function refreshTokens(req: Request, res: Response) {
       }
     }
 
-    for (const token of coingeckoData.concat(bitqueryTokens.map(b => ({
-      id: b.coingeckoId || b.symbol.toLowerCase(),
-      name: b.name,
-      symbol: b.symbol.toLowerCase(),
-      platforms: { solana: b.address },
-      market_cap: null,
-      total_volume: null,
-      current_price: b.price,
-      price_change_percentage_24h: null
-    })))) {
-      const bitqueryToken = bitqueryTokens.find(b => b.address === token.platforms?.solana || b.symbol.toLowerCase() === token.symbol);
-      const cgToken = coingeckoMap.get(token.id) || coingeckoMap.get(token.platforms?.solana);
+    const allTokens: CoinGeckoToken[] = [
+      ...coingeckoData,
+      ...bitqueryTokens.map(b => ({
+        id: b.coingeckoId || b.symbol.toLowerCase(),
+        name: b.name,
+        symbol: b.symbol.toLowerCase(),
+        current_price: b.price,
+        market_cap: null,
+        total_supply: null,
+        circulating_supply: null,
+        total_volume: null,
+        transferAmount: b.transferAmount,
+        categories: undefined,
+        platforms: undefined
+      } as CoinGeckoToken))
+    ];
 
+    let upsertCount = 0;
+    for (const token of allTokens) {
+      const category = token.categories?.[0] || 'uncategorized';
       const symbol = token.symbol.toLowerCase();
-      await prisma.token.upsert({
+      const cgToken = coingeckoMap.get(token.id) || (token.platforms?.solana ? coingeckoMap.get(token.platforms.solana) : undefined);
+
+      const updatedToken = await prisma.token.upsert({
         where: { symbol },
         update: {
           name: token.name,
-          category: token.platforms?.solana ? 'altcoin' : (cgToken?.category || 'altcoin'),
-          price: bitqueryToken?.price ?? token.current_price,
-          marketCap: cgToken?.market_cap,
-          volume24h: cgToken?.total_volume,
-          transferVolume24h: bitqueryToken?.transferAmount,
+          category,
+          price: token.current_price ?? (cgToken?.current_price ?? 0),
+          marketCap: token.market_cap ?? (cgToken?.market_cap ?? 0),
+          volume24h: token.total_volume ?? (cgToken?.total_volume ?? 0),
+          transferVolume24h: token.transferAmount,
           updatedAt: new Date()
         },
         create: {
           name: token.name,
           symbol,
-          category: token.platforms?.solana ? 'altcoin' : (cgToken?.category || 'altcoin'),
-          price: bitqueryToken?.price ?? token.current_price,
-          marketCap: cgToken?.market_cap,
-          volume24h: cgToken?.total_volume,
-          transferVolume24h: bitqueryToken?.transferAmount,
+          category,
+          price: token.current_price ?? (cgToken?.current_price ?? 0),
+          marketCap: token.market_cap ?? (cgToken?.market_cap ?? 0),
+          volume24h: token.total_volume ?? (cgToken?.total_volume ?? 0),
+          transferVolume24h: token.transferAmount,
           createdAt: new Date(),
           updatedAt: new Date()
         }
       });
+
+      // Save historical data
+      await prisma.tokenHistory.create({
+        data: {
+          tokenId: updatedToken.id,
+          price: token.current_price ?? (cgToken?.current_price ?? 0),
+          marketCap: token.market_cap ?? (cgToken?.market_cap ?? 0),
+          volume24h: token.total_volume ?? (cgToken?.total_volume ?? 0),
+          timestamp: new Date()
+        }
+      });
+
+      upsertCount++;
     }
 
+    logger.info(`Upserted ${upsertCount} tokens and saved their historical data`);
     await prisma.$disconnect();
-    res.json({ message: 'Token data refreshed successfully', coingeckoStatus, bitqueryStatus });
+    res.json({ message: 'Token data refreshed successfully', coingeckoStatus, bitqueryStatus, totalUpserted: upsertCount });
   } catch (error: any) {
     logger.error(`Error refreshing tokens: ${error.message}`);
     await prisma.$disconnect();
@@ -98,15 +105,15 @@ export async function getTokens(req: Request, res: Response) {
       orderBy: { updatedAt: 'desc' }
     });
 
-    // Calculate metrics for each token
+    logger.info(`Returning ${tokens.length} tokens from database`);
     const enrichedTokens = tokens.map(token => {
       const metrics = calculateTokenMetrics({
         price: token.price || 0,
         marketCap: token.marketCap || 0,
         volume24h: token.volume24h || 0,
-        circulatingSupply: undefined, // Requires CoinGecko data integration
-        totalSupply: undefined,      // Requires CoinGecko data integration
-        targetMarketCap: undefined   // Optional, can be added if defined
+        circulatingSupply: undefined,
+        totalSupply: undefined,
+        targetMarketCap: undefined
       });
       return {
         ...token,
@@ -137,6 +144,21 @@ export async function getTokenById(req: Request, res: Response) {
   }
 }
 
+export async function getTokenHistory(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const history = await prisma.tokenHistory.findMany({
+      where: { tokenId: id },
+      orderBy: { timestamp: 'asc' },
+      take: 100 // Limit to last 100 entries
+    });
+    res.json(history);
+  } catch (error: any) {
+    logger.error(`Error fetching token history for ${req.params.id}: ${error.message}`);
+    res.status(500).json({ error: 'Failed to fetch token history' });
+  }
+}
+
 export async function createToken(req: Request, res: Response) {
   try {
     const { name, symbol, category, price, marketCap, volume24h, transferVolume24h } = req.body;
@@ -144,11 +166,13 @@ export async function createToken(req: Request, res: Response) {
       data: {
         name,
         symbol: symbol.toLowerCase(),
-        category: category || 'altcoin',
+        category: category || 'uncategorized',
         price,
         marketCap,
         volume24h,
-        transferVolume24h
+        transferVolume24h,
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
     });
     res.status(201).json(token);
@@ -167,11 +191,12 @@ export async function updateToken(req: Request, res: Response) {
       data: {
         name,
         symbol: symbol?.toLowerCase(),
-        category,
+        category: category || 'uncategorized',
         price,
         marketCap,
         volume24h,
-        transferVolume24h
+        transferVolume24h,
+        updatedAt: new Date()
       }
     });
     res.json(token);

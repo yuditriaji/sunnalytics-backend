@@ -7,44 +7,6 @@ import { cache } from '../services/cache';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
-const TOKEN_LIST = [
-  {
-    address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-    name: 'USD Coin (Solana)',
-    symbol: 'USDC',
-    coingeckoId: 'usd-coin',
-    decimals: 6
-  },
-  {
-    address: 'So11111111111111111111111111111111111111112',
-    name: 'Solana',
-    symbol: 'SOL',
-    coingeckoId: 'solana',
-    decimals: 9
-  },
-  {
-    address: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
-    name: 'Jupiter',
-    symbol: 'JUP',
-    coingeckoId: 'jupiter-exchange-solana',
-    decimals: 6
-  },
-  {
-    address: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-    name: 'Bonk',
-    symbol: 'BONK',
-    coingeckoId: 'bonk',
-    decimals: 5
-  },
-  {
-    address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-    name: 'USDT (Solana)',
-    symbol: 'USDT',
-    coingeckoId: 'tether',
-    decimals: 6
-  }
-];
-
 export interface BitqueryToken {
   address: string;
   name: string;
@@ -99,8 +61,14 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
   }
 
   const tokens: BitqueryToken[] = [];
-  const tokenMints = TOKEN_LIST.map(t => t.address);
+  // Placeholder: Replace with dynamic token list fetch (e.g., from a token list API)
+  const tokenMints: string[] = []; // To be populated dynamically
   const oneDayAgo = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+
+  if (tokenMints.length === 0) {
+    logger.warn('No token mints configured for Bitquery fetch');
+    return [];
+  }
 
   logger.info(`Querying mints: ${tokenMints.join(', ')}`);
 
@@ -129,8 +97,8 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
             continue;
           }
 
-          const tokenInfo = TOKEN_LIST.find(t => t.address === mintAddress)!;
-          const price = await getTokenPrice(tokenInfo.coingeckoId);
+          // Placeholder: Fetch name, symbol, and coingeckoId dynamically (e.g., from a token list)
+          const price = 0; // To be replaced with dynamic price fetch
           let totalTransferAmount = 0;
 
           for (const sig of signatures.slice(0, 20)) {
@@ -158,10 +126,9 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
                     ['transfer', 'transferChecked'].includes(parsedInfo.type) &&
                     parsedInfo.info.mint === mintAddress
                   ) {
-                    const amount = parseFloat(parsedInfo.info.amount || parsedInfo.info.tokenAmount?.amount || '0') /
-                      Math.pow(10, tokenInfo.decimals);
+                    const amount = parseFloat(parsedInfo.info.amount || parsedInfo.info.tokenAmount?.amount || '0') / 1e6; // Placeholder decimals
                     totalTransferAmount += amount * price;
-                    logger.info(`Found transfer in ${sig.signature}: ${amount} ${tokenInfo.symbol} ($${totalTransferAmount.toFixed(2)})`);
+                    logger.info(`Found transfer in ${sig.signature}: ${amount} ($${totalTransferAmount.toFixed(2)})`);
                   }
                 }
               }
@@ -173,11 +140,11 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
           if (totalTransferAmount > 0) {
             tokens.push({
               address: mintAddress,
-              name: tokenInfo.name,
-              symbol: tokenInfo.symbol,
+              name: '', // To be fetched dynamically
+              symbol: '', // To be fetched dynamically
               price,
               transferAmount: totalTransferAmount,
-              coingeckoId: tokenInfo.coingeckoId
+              coingeckoId: '' // To be fetched dynamically
             });
           }
         } catch (error: any) {
@@ -187,7 +154,7 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
 
       const uniqueTokens = Array.from(
         new Map(tokens.map(t => [t.address, t])).values()
-      ).slice(0, 100);
+      );
 
       if (!uniqueTokens.length) {
         logger.warn('No valid Solana token transfers found after processing');
