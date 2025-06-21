@@ -15,10 +15,14 @@ model Token {
   price               Float?
   marketCap           Float?
   volume24h           Float?
+  priceChange24h      Float?
   transferVolume24h   Float?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
   histories           TokenHistory[]
+  liquidityScore    Float?   // New field
+  pumpDumpRiskScore Float?   // New field
+  walletDistributionScore Float? // New field
 }
 
 model TokenHistory {

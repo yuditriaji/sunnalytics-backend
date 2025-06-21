@@ -21,10 +21,10 @@ async function getTokenPrice(coingeckoId: string): Promise<number> {
     const response = await axios.get(`${COINGECKO_BASE}/simple/price`, {
       params: {
         ids: coingeckoId,
-        vs_currencies: 'usd'
+        vs_currencies: 'usd',
       },
       headers: { 'Content-Type': 'application/json' },
-      timeout: 5000
+      timeout: 5000,
     });
     const price = response.data[coingeckoId]?.usd;
     if (typeof price !== 'number') {
@@ -52,6 +52,49 @@ function isParsedInstruction(ix: any): ix is ParsedInstruction {
   return ix && 'parsed' in ix && typeof ix.parsed === 'object';
 }
 
+async function getSolanaTokenList(): Promise<{ address: string; symbol: string; name: string; coingeckoId?: string }[]> {
+  const cacheKey = 'solana_token_list';
+  const cachedList = cache.get<{ address: string; symbol: string; name: string; coingeckoId?: string }[]>(cacheKey);
+  if (cachedList) {
+    logger.info('Using cached Solana token list');
+    return cachedList;
+  }
+
+  try {
+    const response = await axios.get(`${COINGECKO_BASE}/coins/markets`, {
+      params: {
+        vs_currency: 'usd',
+        order: 'market_cap_desc',
+        per_page: 100,
+        page: 1,
+        sparkline: false,
+      },
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 5000,
+    });
+
+    const tokens = response.data
+      .filter((token: any) => token.platforms && token.platforms.solana && token.platforms.solana.length > 0)
+      .map((token: any) => ({
+        address: token.platforms.solana,
+        symbol: token.symbol.toLowerCase(),
+        name: token.name,
+        coingeckoId: token.id,
+      }));
+
+    if (tokens.length === 0) {
+      logger.warn('No Solana tokens found in CoinGecko response');
+    } else {
+      cache.set(cacheKey, tokens, 86400); // Cache for 24 hours
+    }
+
+    return tokens;
+  } catch (error: any) {
+    logger.error(`Failed to fetch Solana token list: ${error.message}`);
+    return [];
+  }
+}
+
 export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken[]> {
   const cacheKey = 'solana_tokens';
   const cachedData = cache.get<BitqueryToken[]>(cacheKey);
@@ -60,45 +103,41 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
     return cachedData;
   }
 
+  const tokenList = await getSolanaTokenList();
   const tokens: BitqueryToken[] = [];
-  // Placeholder: Replace with dynamic token list fetch (e.g., from a token list API)
-  const tokenMints: string[] = []; // To be populated dynamically
   const oneDayAgo = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
 
-  if (tokenMints.length === 0) {
-    logger.warn('No token mints configured for Bitquery fetch');
+  if (tokenList.length === 0) {
+    logger.warn('No Solana token mints found');
     return [];
   }
 
-  logger.info(`Querying mints: ${tokenMints.join(', ')}`);
+  logger.info(`Querying ${tokenList.length} Solana token mints`);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const connection = new Connection(SOLANA_RPC, 'confirmed');
 
     try {
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1000));
 
-      for (const mintAddress of tokenMints) {
+      for (const token of tokenList) {
         try {
-          if (!(await isValidSplToken(connection, mintAddress))) {
-            logger.warn(`Invalid SPL token mint: ${mintAddress}`);
+          if (!(await isValidSplToken(connection, token.address))) {
+            logger.warn(`Invalid SPL token mint: ${token.address}`);
             continue;
           }
 
-          const mintPubkey = new PublicKey(mintAddress);
-          const signatures = await connection.getSignaturesForAddress(mintPubkey, {
-            limit: 100
-          });
+          const mintPubkey = new PublicKey(token.address);
+          const signatures = await connection.getSignaturesForAddress(mintPubkey, { limit: 100 });
 
-          logger.info(`Fetched ${signatures.length} signatures for mint ${mintAddress} on attempt ${attempt}`);
+          logger.info(`Fetched ${signatures.length} signatures for mint ${token.address} on attempt ${attempt}`);
 
           if (!signatures.length) {
-            logger.warn(`No recent transfers for mint ${mintAddress} on ${SOLANA_RPC}`);
+            logger.warn(`No recent transfers for mint ${token.address} on ${SOLANA_RPC}`);
             continue;
           }
 
-          // Placeholder: Fetch name, symbol, and coingeckoId dynamically (e.g., from a token list)
-          const price = 0; // To be replaced with dynamic price fetch
+          const price = token.coingeckoId ? await getTokenPrice(token.coingeckoId) : 0;
           let totalTransferAmount = 0;
 
           for (const sig of signatures.slice(0, 20)) {
@@ -109,14 +148,14 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
               }
 
               const tx = await connection.getParsedTransaction(sig.signature, {
-                maxSupportedTransactionVersion: 0
+                maxSupportedTransactionVersion: 0,
               });
               if (!tx) {
                 logger.warn(`Transaction ${sig.signature} not found`);
                 continue;
               }
 
-              logger.debug(`Processing transaction ${sig.signature} for mint ${mintAddress}`);
+              logger.debug(`Processing transaction ${sig.signature} for mint ${token.address}`);
 
               for (const ix of tx.transaction.message.instructions) {
                 if ('programId' in ix && ix.programId.equals(TOKEN_PROGRAM_ID) && isParsedInstruction(ix)) {
@@ -124,9 +163,10 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
                   logger.debug(`Instruction type: ${parsedInfo.type}, mint: ${parsedInfo.info?.mint}`);
                   if (
                     ['transfer', 'transferChecked'].includes(parsedInfo.type) &&
-                    parsedInfo.info.mint === mintAddress
+                    parsedInfo.info.mint === token.address
                   ) {
-                    const amount = parseFloat(parsedInfo.info.amount || parsedInfo.info.tokenAmount?.amount || '0') / 1e6; // Placeholder decimals
+                    const amount =
+                      parseFloat(parsedInfo.info.amount || parsedInfo.info.tokenAmount?.amount || '0') / 1e6; // Adjust decimals as needed
                     totalTransferAmount += amount * price;
                     logger.info(`Found transfer in ${sig.signature}: ${amount} ($${totalTransferAmount.toFixed(2)})`);
                   }
@@ -139,22 +179,20 @@ export async function fetchBitqueryTokens(maxRetries = 3): Promise<BitqueryToken
 
           if (totalTransferAmount > 0) {
             tokens.push({
-              address: mintAddress,
-              name: '', // To be fetched dynamically
-              symbol: '', // To be fetched dynamically
+              address: token.address,
+              name: token.name,
+              symbol: token.symbol,
               price,
               transferAmount: totalTransferAmount,
-              coingeckoId: '' // To be fetched dynamically
+              coingeckoId: token.coingeckoId,
             });
           }
         } catch (error: any) {
-          logger.warn(`Error processing mint ${mintAddress} on ${SOLANA_RPC}: ${error.message}`);
+          logger.warn(`Error processing mint ${token.address} on ${SOLANA_RPC}: ${error.message}`);
         }
       }
 
-      const uniqueTokens = Array.from(
-        new Map(tokens.map(t => [t.address, t])).values()
-      );
+      const uniqueTokens = Array.from(new Map(tokens.map((t) => [t.address, t])).values());
 
       if (!uniqueTokens.length) {
         logger.warn('No valid Solana token transfers found after processing');

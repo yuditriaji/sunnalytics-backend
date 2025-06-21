@@ -6,7 +6,11 @@ export const tokenSchema = z.object({
   category: z.enum(['memecoin', 'defi', 'altcoin'], { message: 'Invalid category' }),
   marketCap: z.number().optional(),
   volume24h: z.number().optional(),
-  price: z.number().int().optional() // Changed integer() to int()
+  price: z.number().optional(),
+  transferVolume24h: z.number().optional(),
+  liquidityScore: z.number().optional(),
+  pumpDumpRiskScore: z.number().optional(),
+  walletDistributionScore: z.number().optional(),
 });
 
 export function validateEnv() {
@@ -15,13 +19,15 @@ export function validateEnv() {
     DATABASE_URL: z.string().url(),
     CORS_ORIGINS: z.string().optional(),
     BITQUERY_CLIENT_ID: z.string().min(1, 'Bitquery client ID is required'),
-    BITQUERY_CLIENT_SECRET: z.string().min(1, 'Bitquery client secret is required')
+    BITQUERY_CLIENT_SECRET: z.string().min(1, 'Bitquery client secret is required'),
+    ETHERSCAN_API_KEY: z.string().optional(),
+    SOLANA_RPC_URL: z.string().url().default('https://api.mainnet-beta.solana.com'),
   });
 
   try {
-    envSchema.parse(process.env); // Added process.env
+    envSchema.parse(process.env);
   } catch (error) {
-    if (error && typeof error === 'object' && 'errors' in error) {
+    if (error && typeof error === 'object' && error !== null && 'errors' in error) {
       throw new Error(`Environment variable validation failed: ${JSON.stringify((error as any).errors, null, 2)}`);
     }
     throw error;

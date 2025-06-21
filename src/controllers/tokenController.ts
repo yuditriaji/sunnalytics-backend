@@ -6,7 +6,6 @@ import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 
 const prisma = new PrismaClient();
-const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
 export async function refreshTokens(req: Request, res: Response) {
   try {
@@ -24,68 +23,97 @@ export async function refreshTokens(req: Request, res: Response) {
       if (token.platforms?.solana) {
         coingeckoMap.set(token.platforms.solana, token);
       }
+      if (token.platforms?.ethereum) {
+        coingeckoMap.set(token.platforms.ethereum, token);
+      }
     }
 
-    const allTokens: CoinGeckoToken[] = [
+    const allTokens: (CoinGeckoToken | BitqueryToken)[] = [
       ...coingeckoData,
-      ...bitqueryTokens.map(b => ({
-        id: b.coingeckoId || b.symbol.toLowerCase(),
-        name: b.name,
-        symbol: b.symbol.toLowerCase(),
-        current_price: b.price,
-        market_cap: null,
-        total_supply: null,
-        circulating_supply: null,
-        total_volume: null,
-        transferAmount: b.transferAmount,
-        categories: undefined,
-        platforms: undefined
-      } as CoinGeckoToken))
+      ...bitqueryTokens,
     ];
 
     let upsertCount = 0;
-    for (const token of allTokens) {
-      const category = token.categories?.[0] || 'uncategorized';
-      const symbol = token.symbol.toLowerCase();
-      const cgToken = coingeckoMap.get(token.id) || (token.platforms?.solana ? coingeckoMap.get(token.platforms.solana) : undefined);
+    const batchSize = 50;
+    for (let i = 0; i < allTokens.length; i += batchSize) {
+      const batch = allTokens.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (token) => {
+          const isBitqueryToken = 'address' in token;
+          const category = isBitqueryToken ? 'altcoin' : token.categories?.[0] || 'uncategorized';
+          const symbol = isBitqueryToken ? token.symbol.toLowerCase() : token.symbol.toLowerCase();
+          const cgToken = isBitqueryToken
+            ? coingeckoMap.get(token.coingeckoId || symbol) || coingeckoMap.get(token.address)
+            : coingeckoMap.get(token.id) ||
+              (token.platforms?.solana ? coingeckoMap.get(token.platforms.solana) : undefined) ||
+              (token.platforms?.ethereum ? coingeckoMap.get(token.platforms.ethereum) : undefined);
 
-      const updatedToken = await prisma.token.upsert({
-        where: { symbol },
-        update: {
-          name: token.name,
-          category,
-          price: token.current_price ?? (cgToken?.current_price ?? 0),
-          marketCap: token.market_cap ?? (cgToken?.market_cap ?? 0),
-          volume24h: token.total_volume ?? (cgToken?.total_volume ?? 0),
-          transferVolume24h: token.transferAmount,
-          updatedAt: new Date()
-        },
-        create: {
-          name: token.name,
-          symbol,
-          category,
-          price: token.current_price ?? (cgToken?.current_price ?? 0),
-          marketCap: token.market_cap ?? (cgToken?.market_cap ?? 0),
-          volume24h: token.total_volume ?? (cgToken?.total_volume ?? 0),
-          transferVolume24h: token.transferAmount,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      });
+          const metrics = await calculateTokenMetrics({
+            price: isBitqueryToken ? token.price : token.current_price ?? (cgToken?.current_price ?? 0),
+            marketCap: isBitqueryToken ? 0 : token.market_cap ?? (cgToken?.market_cap ?? 0),
+            volume24h: isBitqueryToken ? 0 : token.total_volume ?? (cgToken?.total_volume ?? 0),
+            transferVolume24h: isBitqueryToken ? token.transferAmount : undefined,
+            circulatingSupply: isBitqueryToken ? undefined : (token.circulating_supply ?? undefined),
+            totalSupply: isBitqueryToken ? undefined : (token.total_supply ?? undefined),
+            coingeckoId: isBitqueryToken ? token.coingeckoId : token.id,
+            contractAddress: isBitqueryToken
+              ? token.address
+              : token.platforms?.ethereum || token.platforms?.solana,
+            platform: isBitqueryToken
+              ? 'solana'
+              : token.platforms?.ethereum
+              ? 'ethereum'
+              : token.platforms?.solana
+              ? 'solana'
+              : undefined,
+          });
 
-      // Save historical data
-      await prisma.tokenHistory.create({
-        data: {
-          tokenId: updatedToken.id,
-          price: token.current_price ?? (cgToken?.current_price ?? 0),
-          marketCap: token.market_cap ?? (cgToken?.market_cap ?? 0),
-          volume24h: token.total_volume ?? (cgToken?.total_volume ?? 0),
-          timestamp: new Date()
-        }
-      });
+          const updatedToken = await prisma.token.upsert({
+            where: { symbol },
+            update: {
+              name: isBitqueryToken ? token.name : token.name,
+              category,
+              price: isBitqueryToken ? token.price : token.current_price ?? (cgToken?.current_price ?? 0),
+              marketCap: isBitqueryToken ? 0 : token.market_cap ?? (cgToken?.market_cap ?? 0),
+              volume24h: isBitqueryToken ? 0 : token.total_volume ?? (cgToken?.total_volume ?? 0),
+              transferVolume24h: isBitqueryToken ? token.transferAmount : undefined,
+              priceChange24h: isBitqueryToken ? undefined : token.price_change_percentage_24h ?? (cgToken?.price_change_percentage_24h ?? null),
+              walletDistributionScore: metrics.walletDistributionScore,
+              updatedAt: new Date(),
+            },
+            create: {
+              name: isBitqueryToken ? token.name : token.name,
+              symbol,
+              category,
+              price: isBitqueryToken ? token.price : token.current_price ?? (cgToken?.current_price ?? 0),
+              marketCap: isBitqueryToken ? 0 : token.market_cap ?? (cgToken?.market_cap ?? 0),
+              volume24h: isBitqueryToken ? 0 : token.total_volume ?? (cgToken?.total_volume ?? 0),
+              transferVolume24h: isBitqueryToken ? token.transferAmount : undefined,
+              priceChange24h: isBitqueryToken ? null : token.price_change_percentage_24h ?? (cgToken?.price_change_percentage_24h ?? null),
+              walletDistributionScore: metrics.walletDistributionScore,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
 
-      upsertCount++;
+          await prisma.tokenHistory.create({
+            data: {
+              tokenId: updatedToken.id,
+              price: isBitqueryToken ? token.price : token.current_price ?? (cgToken?.current_price ?? 0),
+              marketCap: isBitqueryToken ? 0 : token.market_cap ?? (cgToken?.market_cap ?? 0),
+              volume24h: isBitqueryToken ? 0 : token.total_volume ?? (cgToken?.total_volume ?? 0),
+              timestamp: new Date(),
+            },
+          });
+
+          upsertCount++;
+        })
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
+
+    // Update liquidityScore and pumpDumpRiskScore in the database
+    await updateTokenScores();
 
     logger.info(`Upserted ${upsertCount} tokens and saved their historical data`);
     await prisma.$disconnect();
@@ -97,27 +125,99 @@ export async function refreshTokens(req: Request, res: Response) {
   }
 }
 
+async function updateTokenScores() {
+  try {
+    // Update liquidityScore
+    await prisma.$executeRaw`
+      UPDATE "Token"
+      SET "liquidityScore" = LEAST(GREATEST(
+        COALESCE(
+          ((COALESCE("volume24h", 0) / NULLIF("marketCap", 0) * 0.7) +
+           (COALESCE("transferVolume24h", 0) / NULLIF("marketCap", 0) * 0.3)) * 100,
+          0
+        ),
+        0
+      ), 100)
+      WHERE "marketCap" IS NOT NULL AND "marketCap" > 0;
+    `;
+
+    // Update pumpDumpRiskScore
+    await prisma.$executeRaw`
+      WITH PriceChanges AS (
+        SELECT
+          "tokenId",
+          "timestamp",
+          "volume24h",
+          "price",
+          ("price" - LAG("price") OVER (PARTITION BY "tokenId" ORDER BY "timestamp"))
+            / NULLIF(LAG("price") OVER (PARTITION BY "tokenId" ORDER BY "timestamp"), 0) AS price_change_ratio
+        FROM "TokenHistory"
+        WHERE "timestamp" >= NOW() - INTERVAL '7 days'
+      ),
+      HistoricalData AS (
+        SELECT
+          "tokenId",
+          AVG("volume24h") AS avg_volume,
+          STDDEV_POP(COALESCE(price_change_ratio, 0)) AS price_volatility
+        FROM PriceChanges
+        GROUP BY "tokenId"
+        HAVING COUNT(*) >= 3 -- Require at least 3 data points
+      )
+      UPDATE "Token" t
+      SET "pumpDumpRiskScore" = LEAST(GREATEST(
+        COALESCE(
+          (
+            -- Volume spike score
+            (COALESCE(t."volume24h", 0) - COALESCE(h.avg_volume, 0)) / NULLIF(h.avg_volume, 0) * 0.5 +
+            -- Volatility score
+            COALESCE(h.price_volatility, 0) * 0.5
+          ) * 100,
+          0
+        ),
+        0
+      ), 100)
+      FROM HistoricalData h
+      WHERE t.id = h."tokenId"
+      AND t."marketCap" IS NOT NULL AND t."marketCap" > 0
+      AND h.avg_volume IS NOT NULL AND h.avg_volume > 0;
+    `;
+
+    logger.info('Updated liquidityScore and pumpDumpRiskScore in the database');
+  } catch (error: any) {
+    logger.error(`Error updating token scores: ${error.message}`);
+    throw error; // Rethrow to debug during testing
+  }
+}
+
 export async function getTokens(req: Request, res: Response) {
   try {
     const { category } = req.query;
     const tokens = await prisma.token.findMany({
       where: category ? { category: category as string } : undefined,
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: 'desc' },
     });
 
     logger.info(`Returning ${tokens.length} tokens from database`);
-    const enrichedTokens = tokens.map(token => {
-      const metrics = calculateTokenMetrics({
-        price: token.price || 0,
-        marketCap: token.marketCap || 0,
-        volume24h: token.volume24h || 0,
-        circulatingSupply: undefined,
-        totalSupply: undefined,
-        targetMarketCap: undefined
-      });
+    const enrichedTokens = tokens.map((token) => {
+      const volumeMarketCapRatio = token.marketCap && token.marketCap > 0 ? (token.volume24h || 0) / token.marketCap : 0;
+
       return {
-        ...token,
-        ...metrics
+        id: token.id,
+        symbol: token.symbol,
+        name: token.name,
+        category: token.category,
+        price: token.price,
+        marketCap: token.marketCap,
+        volume24h: token.volume24h,
+        volumeMarketCapRatio,
+        liquidityScore: token.liquidityScore || 0,
+        pumpDumpRiskScore: token.pumpDumpRiskScore || 0,
+        walletDistributionScore: token.walletDistributionScore || 0,
+        isVolumeHealthy: volumeMarketCapRatio > 0.1,
+        stats: {
+          priceChange24h: token.priceChange24h || 0,
+          liquidityScore: token.liquidityScore || 0,
+        },
       };
     });
 
@@ -131,13 +231,31 @@ export async function getTokens(req: Request, res: Response) {
 export async function getTokenById(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const token = await prisma.token.findUnique({
-      where: { id }
-    });
+    const token = await prisma.token.findUnique({ where: { id } });
     if (!token) {
       return res.status(404).json({ error: 'Token not found' });
     }
-    res.json(token);
+
+    const volumeMarketCapRatio = token.marketCap && token.marketCap > 0 ? (token.volume24h || 0) / token.marketCap : 0;
+
+    res.json({
+      id: token.id,
+      symbol: token.symbol,
+      name: token.name,
+      category: token.category,
+      price: token.price,
+      marketCap: token.marketCap,
+      volume24h: token.volume24h,
+      volumeMarketCapRatio,
+      liquidityScore: token.liquidityScore || 0,
+      pumpDumpRiskScore: token.pumpDumpRiskScore || 0,
+      walletDistributionScore: token.walletDistributionScore || 0,
+      isVolumeHealthy: volumeMarketCapRatio > 0.1,
+      stats: {
+        priceChange24h: token.priceChange24h || 0,
+        liquidityScore: token.liquidityScore || 0,
+      },
+    });
   } catch (error: any) {
     logger.error(`Error fetching token ${req.params.id}: ${error.message}`);
     res.status(500).json({ error: 'Failed to fetch token' });
@@ -150,7 +268,7 @@ export async function getTokenHistory(req: Request, res: Response) {
     const history = await prisma.tokenHistory.findMany({
       where: { tokenId: id },
       orderBy: { timestamp: 'asc' },
-      take: 100 // Limit to last 100 entries
+      take: 100,
     });
     res.json(history);
   } catch (error: any) {
@@ -161,7 +279,7 @@ export async function getTokenHistory(req: Request, res: Response) {
 
 export async function createToken(req: Request, res: Response) {
   try {
-    const { name, symbol, category, price, marketCap, volume24h, transferVolume24h } = req.body;
+    const { name, symbol, category, price, marketCap, volume24h, transferVolume24h, priceChange24h, walletDistributionScore } = req.body;
     const token = await prisma.token.create({
       data: {
         name,
@@ -171,10 +289,14 @@ export async function createToken(req: Request, res: Response) {
         marketCap,
         volume24h,
         transferVolume24h,
+        priceChange24h,
+        walletDistributionScore,
         createdAt: new Date(),
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     });
+
+    await updateTokenScores();
     res.status(201).json(token);
   } catch (error: any) {
     logger.error(`Error creating token: ${error.message}`);
@@ -185,7 +307,7 @@ export async function createToken(req: Request, res: Response) {
 export async function updateToken(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const { name, symbol, category, price, marketCap, volume24h, transferVolume24h } = req.body;
+    const { name, symbol, category, price, marketCap, volume24h, transferVolume24h, priceChange24h, walletDistributionScore } = req.body;
     const token = await prisma.token.update({
       where: { id },
       data: {
@@ -196,9 +318,13 @@ export async function updateToken(req: Request, res: Response) {
         marketCap,
         volume24h,
         transferVolume24h,
-        updatedAt: new Date()
-      }
+        priceChange24h,
+        walletDistributionScore,
+        updatedAt: new Date(),
+      },
     });
+
+    await updateTokenScores();
     res.json(token);
   } catch (error: any) {
     logger.error(`Error updating token ${req.params.id}: ${error.message}`);
@@ -209,9 +335,7 @@ export async function updateToken(req: Request, res: Response) {
 export async function deleteToken(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    await prisma.token.delete({
-      where: { id }
-    });
+    await prisma.token.delete({ where: { id } });
     res.status(204).send();
   } catch (error: any) {
     logger.error(`Error deleting token ${req.params.id}: ${error.message}`);
