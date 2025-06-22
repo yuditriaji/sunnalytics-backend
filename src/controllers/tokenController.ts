@@ -1,11 +1,16 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../services/logger';
+import { cache } from '../services/cache';
 import { fetchMarketData, CoinGeckoToken } from '../api/coingecko';
 import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
+import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
+import axios from 'axios';
+import { transfer } from '@solana/spl-token';
 
 const prisma = new PrismaClient();
+const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
 export async function refreshTokens(req: Request, res: Response) {
   try {
@@ -48,6 +53,51 @@ export async function refreshTokens(req: Request, res: Response) {
               (token.platforms?.solana ? coingeckoMap.get(token.platforms.solana) : undefined) ||
               (token.platforms?.ethereum ? coingeckoMap.get(token.platforms.ethereum) : undefined);
 
+          // Fetch platforms from TokenHeader
+          const tokenHeader = await prisma.tokenHeader.findFirst({
+            where: { symbol: symbol },
+            select: { platforms: true },
+          });
+
+          let contractAddress: string | undefined;
+          let platform: string | undefined;
+
+          if (isBitqueryToken) {
+            contractAddress = token.address;
+            platform = 'solana';
+          } else if (tokenHeader?.platforms) {
+            // Prefer ethereum or solana, otherwise take first available platform
+            const platforms = tokenHeader.platforms as { [key: string]: string };
+            if (platforms.ethereum) {
+              contractAddress = platforms.ethereum;
+              platform = 'ethereum';
+            } else if (platforms.solana) {
+              contractAddress = platforms.solana;
+              platform = 'solana';
+            } else {
+              const firstPlatform = Object.keys(platforms)[0];
+              if (firstPlatform && platforms[firstPlatform]) {
+                contractAddress = platforms[firstPlatform];
+                platform = firstPlatform;
+              }
+            }
+          } else {
+            // Fallback to CoinGecko data
+            contractAddress = token.platforms?.ethereum || token.platforms?.solana;
+            platform = token.platforms?.ethereum
+              ? 'ethereum'
+              : token.platforms?.solana
+              ? 'solana'
+              : undefined;
+          }
+
+          if (!contractAddress || !platform) {
+            logger.warn(`Skipping token ${symbol}: missing contractAddress or platform (platforms: ${JSON.stringify(tokenHeader?.platforms)})`);
+            return;
+          }
+
+          logger.debug(`Selected platform ${platform} with contractAddress ${contractAddress} for ${symbol}`);
+
           const metrics = await calculateTokenMetrics({
             price: isBitqueryToken ? token.price : token.current_price ?? (cgToken?.current_price ?? 0),
             marketCap: isBitqueryToken ? 0 : token.market_cap ?? (cgToken?.market_cap ?? 0),
@@ -56,16 +106,8 @@ export async function refreshTokens(req: Request, res: Response) {
             circulatingSupply: isBitqueryToken ? undefined : (token.circulating_supply ?? undefined),
             totalSupply: isBitqueryToken ? undefined : (token.total_supply ?? undefined),
             coingeckoId: isBitqueryToken ? token.coingeckoId : token.id,
-            contractAddress: isBitqueryToken
-              ? token.address
-              : token.platforms?.ethereum || token.platforms?.solana,
-            platform: isBitqueryToken
-              ? 'solana'
-              : token.platforms?.ethereum
-              ? 'ethereum'
-              : token.platforms?.solana
-              ? 'solana'
-              : undefined,
+            contractAddress,
+            platform,
           });
 
           const updatedToken = await prisma.token.upsert({
@@ -79,6 +121,8 @@ export async function refreshTokens(req: Request, res: Response) {
               transferVolume24h: isBitqueryToken ? token.transferAmount : undefined,
               priceChange24h: isBitqueryToken ? undefined : token.price_change_percentage_24h ?? (cgToken?.price_change_percentage_24h ?? null),
               walletDistributionScore: metrics.walletDistributionScore,
+              contractAddress,
+              platform,
               updatedAt: new Date(),
             },
             create: {
@@ -91,6 +135,8 @@ export async function refreshTokens(req: Request, res: Response) {
               transferVolume24h: isBitqueryToken ? token.transferAmount : undefined,
               priceChange24h: isBitqueryToken ? null : token.price_change_percentage_24h ?? (cgToken?.price_change_percentage_24h ?? null),
               walletDistributionScore: metrics.walletDistributionScore,
+              contractAddress,
+              platform,
               createdAt: new Date(),
               updatedAt: new Date(),
             },
@@ -112,7 +158,6 @@ export async function refreshTokens(req: Request, res: Response) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
-    // Update liquidityScore and pumpDumpRiskScore in the database
     await updateTokenScores();
 
     logger.info(`Upserted ${upsertCount} tokens and saved their historical data`);
@@ -127,7 +172,6 @@ export async function refreshTokens(req: Request, res: Response) {
 
 async function updateTokenScores() {
   try {
-    // Update liquidityScore
     await prisma.$executeRaw`
       UPDATE "Token"
       SET "liquidityScore" = LEAST(GREATEST(
@@ -141,7 +185,6 @@ async function updateTokenScores() {
       WHERE "marketCap" IS NOT NULL AND "marketCap" > 0;
     `;
 
-    // Update pumpDumpRiskScore
     await prisma.$executeRaw`
       WITH PriceChanges AS (
         SELECT
@@ -161,15 +204,13 @@ async function updateTokenScores() {
           STDDEV_POP(COALESCE(price_change_ratio, 0)) AS price_volatility
         FROM PriceChanges
         GROUP BY "tokenId"
-        HAVING COUNT(*) >= 3 -- Require at least 3 data points
+        HAVING COUNT(*) >= 3
       )
       UPDATE "Token" t
       SET "pumpDumpRiskScore" = LEAST(GREATEST(
         COALESCE(
           (
-            -- Volume spike score
             (COALESCE(t."volume24h", 0) - COALESCE(h.avg_volume, 0)) / NULLIF(h.avg_volume, 0) * 0.5 +
-            -- Volatility score
             COALESCE(h.price_volatility, 0) * 0.5
           ) * 100,
           0
@@ -185,7 +226,7 @@ async function updateTokenScores() {
     logger.info('Updated liquidityScore and pumpDumpRiskScore in the database');
   } catch (error: any) {
     logger.error(`Error updating token scores: ${error.message}`);
-    throw error; // Rethrow to debug during testing
+    throw error;
   }
 }
 
@@ -213,6 +254,7 @@ export async function getTokens(req: Request, res: Response) {
         liquidityScore: token.liquidityScore || 0,
         pumpDumpRiskScore: token.pumpDumpRiskScore || 0,
         walletDistributionScore: token.walletDistributionScore || 0,
+        transferVolume24h: token.transferVolume24h || 0,
         isVolumeHealthy: volumeMarketCapRatio > 0.1,
         stats: {
           priceChange24h: token.priceChange24h || 0,
@@ -340,5 +382,214 @@ export async function deleteToken(req: Request, res: Response) {
   } catch (error: any) {
     logger.error(`Error deleting token ${req.params.id}: ${error.message}`);
     res.status(500).json({ error: 'Failed to delete token' });
+  }
+}
+
+export async function populateHeader(req: Request, res: Response) {
+  try {
+    const cacheKey = 'coingecko_token_list';
+    let tokens = cache.get<any[]>(cacheKey);
+
+    if (!tokens) {
+      logger.info('Fetching CoinGecko token list');
+      const response = await axios.get(`${COINGECKO_BASE}/coins/list`, {
+        params: { include_platform: true },
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+      });
+      tokens = response.data;
+      cache.set(cacheKey, tokens, 86400); // Cache for 24 hours
+    }
+
+    let upsertCount = 0;
+    const batchSize = 100;
+    if (!tokens) {
+      logger.error('No tokens available to upsert into TokenHeader');
+      return res.status(500).json({ error: 'No tokens available to upsert into TokenHeader' });
+    }
+    for (let i = 0; i < tokens.length; i += batchSize) {
+      const batch = tokens.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (token: any) => {
+          await prisma.tokenHeader.upsert({
+            where: { id: token.id },
+            update: {
+              symbol: token.symbol.toLowerCase(),
+              name: token.name,
+              platforms: token.platforms || {},
+              updatedAt: new Date(),
+            },
+            create: {
+              id: token.id,
+              symbol: token.symbol.toLowerCase(),
+              name: token.name,
+              platforms: token.platforms || {},
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+          upsertCount++;
+        })
+      );
+    }
+
+    logger.info(`Upserted ${upsertCount} tokens into TokenHeader`);
+    res.json({ status: 'success', tokens: upsertCount });
+  } catch (error: any) {
+    logger.error(`Error populating TokenHeader: ${error.message}`);
+    res.status(500).json({ error: 'Failed to populate TokenHeader' });
+  }
+}
+
+export async function populateDetail(req: Request, res: Response) {
+  try {
+    // Fetch tokens with contractAddress and platform
+    const tokens = await prisma.token.findMany({
+      where: { contractAddress: { not: null }, platform: { not: null } },
+      select: { id: true, symbol: true, contractAddress: true, platform: true },
+    });
+
+    logger.info(`Found ${tokens.length} tokens with contractAddress and platform`);
+
+    let upsertCount = 0;
+    const batchSize = 10;
+    for (let i = 0; i < tokens.length; i += batchSize) {
+      const batch = tokens.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (token) => {
+          logger.debug(`Processing token ${token.symbol} (${token.contractAddress}, ${token.platform})`);
+
+          if (!token.contractAddress || !token.platform) {
+            logger.warn(`Skipping token ${token.symbol}: missing contractAddress or platform`);
+            return;
+          }
+
+          // Find corresponding TokenHeader
+          const header = await prisma.tokenHeader.findFirst({
+            where: { symbol: token.symbol.toLowerCase() },
+            select: { id: true },
+          });
+          if (!header) {
+            logger.warn(`No TokenHeader found for symbol ${token.symbol}`);
+            return;
+          }
+
+          // Update Token with contractAddress and platform if needed
+          await prisma.token.update({
+            where: { id: token.id },
+            data: {
+              contractAddress: token.contractAddress,
+              platform: token.platform,
+            },
+          });
+
+          // Fetch on-chain data
+          const onChainData = await fetchOnChainData(
+            header.id,
+            token.symbol,
+            token.contractAddress,
+            token.platform
+          );
+          if (!onChainData) {
+            logger.warn(`No on-chain data for ${token.symbol}`);
+            return;
+          }
+
+          logger.debug(`On-chain data for ${token.symbol}: ${JSON.stringify(onChainData)}`);
+
+          // Upsert TokenDetail
+          await prisma.tokenDetail.upsert({
+            where: { id: header.id },
+            update: {
+              symbol: token.symbol.toLowerCase(),
+              platform: token.platform,
+              contractAddress: token.contractAddress,
+              walletDistributionScore: onChainData.walletDistributionScore,
+              poolLiquidity: onChainData.poolLiquidity,
+              txActivityScore: onChainData.txActivityScore,
+              transferVolume24h: onChainData.transferVolume24h,
+              updatedAt: new Date(),
+            },
+            create: {
+              id: header.id,
+              symbol: token.symbol.toLowerCase(),
+              platform: token.platform,
+              contractAddress: token.contractAddress,
+              walletDistributionScore: onChainData.walletDistributionScore,
+              poolLiquidity: onChainData.poolLiquidity,
+              txActivityScore: onChainData.txActivityScore,
+              transferVolume24h: onChainData.transferVolume24h,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+          upsertCount++;
+          logger.info(`Upserted TokenDetail for ${token.symbol}`);
+        })
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Respect rate limits
+    }
+
+    logger.info(`Upserted ${upsertCount} tokens into TokenDetail`);
+    res.json({ status: 'success', tokens: upsertCount });
+  } catch (error: any) {
+    logger.error(`Error populating TokenDetail: ${error.message}`);
+    res.status(500).json({ error: 'Failed to populate TokenDetail' });
+  }
+}
+
+export async function updateTokenFromDetail(req: Request, res: Response) {
+  try {
+    const details = await prisma.tokenDetail.findMany({
+      select: {
+        symbol: true,
+        walletDistributionScore: true,
+        poolLiquidity: true,
+        transferVolume24h: true,
+      },
+    });
+
+    let updateCount = 0;
+    const batchSize = 50;
+    for (let i = 0; i < details.length; i += batchSize) {
+      const batch = details.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map(async (detail) => {
+          const token = await prisma.token.findUnique({
+            where: { symbol: detail.symbol.toLowerCase() },
+          });
+          if (!token) {
+            logger.warn(`No Token found for symbol ${detail.symbol}`);
+            return;
+          }
+
+          // Calculate liquidityScore based on poolLiquidity
+          const liquidityScore = detail.poolLiquidity
+            ? Math.min((detail.poolLiquidity / 1000000) * 100, 100) // Normalize to 0-100
+            : token.liquidityScore;
+
+          // Update Token
+          await prisma.token.update({
+            where: { symbol: detail.symbol.toLowerCase() },
+            data: {
+              walletDistributionScore: detail.walletDistributionScore,
+              transferVolume24h: detail.transferVolume24h,
+              liquidityScore,
+              updatedAt: new Date(),
+            },
+          });
+          updateCount++;
+        })
+      );
+    }
+
+    // Recalculate scores
+    await updateTokenScores();
+
+    logger.info(`Updated ${updateCount} tokens in Token table`);
+    res.json({ status: 'success', tokens: updateCount });
+  } catch (error: any) {
+    logger.error(`Error updating Token table: ${error.message}`);
+    res.status(500).json({ error: 'Failed to update Token table' });
   }
 }

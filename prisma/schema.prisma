@@ -7,22 +7,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model TokenHeader {
+  id        String   @id // CoinGecko ID (e.g., "0x")
+  symbol    String   // e.g., "ZRX"
+  name      String   // e.g., "0x Protocol"
+  platforms Json     // e.g., { "ethereum": "0xe41d2489571d322189246dafa5ebde1f4699f498" }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TokenDetail {
+  id                    String   @id // CoinGecko ID (e.g., "0x")
+  symbol                String   // e.g., "ZRX"
+  platform              String   // e.g., "solana", "ethereum"
+  contractAddress       String   // e.g., "0xe41d2489571d322189246dafa5ebde1f4699f498"
+  walletDistributionScore Float?   // e.g., 80
+  poolLiquidity         Float?   // e.g., 500000 (USD, Solana only)
+  txActivityScore       Float?   // e.g., 75 (Solana only)
+  transferVolume24h     Float?   // e.g., 1000000 (USD, Bitquery)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
 model Token {
-  id                  String        @id @default(uuid())
-  name                String
-  symbol              String        @unique
-  category            String
-  price               Float?
-  marketCap           Float?
-  volume24h           Float?
-  priceChange24h      Float?
-  transferVolume24h   Float?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  histories           TokenHistory[]
-  liquidityScore    Float?   // New field
-  pumpDumpRiskScore Float?   // New field
-  walletDistributionScore Float? // New field
+  id                    String        @id @default(uuid())
+  name                  String
+  symbol                String        @unique
+  category              String
+  price                 Float?
+  marketCap             Float?
+  volume24h             Float?
+  priceChange24h        Float?
+  transferVolume24h     Float?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  histories             TokenHistory[]
+  liquidityScore        Float?
+  pumpDumpRiskScore     Float?
+  walletDistributionScore Float?
+  contractAddress       String?       // From TokenHeader.platforms
+  platform              String?       // e.g., "solana", "ethereum"
 }
 
 model TokenHistory {
