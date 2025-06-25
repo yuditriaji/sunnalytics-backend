@@ -242,6 +242,11 @@ export async function getTokens(req: Request, res: Response) {
     const enrichedTokens = tokens.map((token) => {
       const volumeMarketCapRatio = token.marketCap && token.marketCap > 0 ? (token.volume24h || 0) / token.marketCap : 0;
 
+      // Convert updatedAt to UTC+7
+      const updatedAtUTC7 = token.updatedAt
+        ? new Date(token.updatedAt.getTime() + 7 * 60 * 60 * 1000).toISOString()
+        : null;
+
       return {
         id: token.id,
         symbol: token.symbol,
@@ -260,6 +265,7 @@ export async function getTokens(req: Request, res: Response) {
           priceChange24h: token.priceChange24h || 0,
           liquidityScore: token.liquidityScore || 0,
         },
+        updatedAt: updatedAtUTC7,
       };
     });
 
