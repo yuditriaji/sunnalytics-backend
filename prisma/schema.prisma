@@ -12,8 +12,10 @@ model TokenHeader {
   symbol    String   // e.g., "ZRX"
   name      String   // e.g., "0x Protocol"
   platforms Json     // e.g., { "ethereum": "0xe41d2489571d322189246dafa5ebde1f4699f498" }
+  exchange   String?   // Added for Binance/Bybit listings
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  tokenDetail TokenDetail?
 }
 
 model TokenDetail {
@@ -27,6 +29,7 @@ model TokenDetail {
   transferVolume24h     Float?   // e.g., 1000000 (USD, Bitquery)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+  tokenHeader          TokenHeader? @relation(fields: [id], references: [id])
 }
 
 model Token {
@@ -47,6 +50,7 @@ model Token {
   walletDistributionScore Float?
   contractAddress       String?       // From TokenHeader.platforms
   platform              String?       // e.g., "solana", "ethereum"
+  exchange             String?   // Added for Binance/Bybit listings
 }
 
 model TokenHistory {

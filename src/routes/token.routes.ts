@@ -9,6 +9,7 @@ import {
   getTokenHistory,
   populateHeader,
   populateDetail,
+  populateExchangeTokens,
   updateTokenFromDetail,
 } from '../controllers/tokenController';
 
@@ -22,6 +23,7 @@ router.put('/:id', updateToken);
 router.delete('/:id', deleteToken);
 router.post('/refresh', refreshTokens);
 router.post('/populate-header', populateHeader);
+router.post('/populate-exchange-tokens', populateExchangeTokens);
 router.post('/populate-detail', populateDetail);
 router.post('/update-token', updateTokenFromDetail);
 
