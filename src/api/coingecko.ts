@@ -1,4 +1,3 @@
-// src/api/coingecko.ts
 import axios from 'axios';
 import { logger } from '../services/logger';
 import { cache } from '../services/cache';
@@ -119,7 +118,7 @@ export async function fetchMarketData(maxRetries = 3): Promise<CoinGeckoToken[]>
   return enrichedTokens;
 }
 
-export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'bybit_spot'], maxRetries = 3): Promise<ExchangeToken[]> {
+export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'bybit_spot', 'mexc', 'huobi', 'gate'], maxRetries = 3): Promise<ExchangeToken[]> {
   const cacheKey = 'exchange_tokens';
   const cachedData = cache.get<ExchangeToken[]>(cacheKey);
   if (cachedData) {
@@ -158,11 +157,13 @@ export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'byb
               logger.warn(`Skipping ticker with missing coin_id for ${exchange}, base: ${ticker.base}`);
               continue;
             }
-            exchangeTokens.push({
-              coinId: ticker.coin_id,
-              symbol: ticker.base.toUpperCase(),
-              exchange,
-            });
+            if (ticker.target === 'USDT') {
+              exchangeTokens.push({
+                coinId: ticker.coin_id,
+                symbol: ticker.base.toUpperCase(),
+                exchange: exchange === 'huobi' ? 'htx' : exchange,
+              });
+            }
           }
 
           logger.info(`Fetched ${tickers.length} tickers for ${exchange}, page ${page}`);

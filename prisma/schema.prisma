@@ -12,7 +12,7 @@ model TokenHeader {
   symbol    String   // e.g., "ZRX"
   name      String   // e.g., "0x Protocol"
   platforms Json     // e.g., { "ethereum": "0xe41d2489571d322189246dafa5ebde1f4699f498" }
-  exchange   String?   // Added for Binance/Bybit listings
+  exchange  String?  // Comma-separated exchanges (e.g., "binance,bybit,mexc,htx,gate")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tokenDetail TokenDetail?
@@ -45,12 +45,15 @@ model Token {
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   histories             TokenHistory[]
+  exchanges             TokenExchange[]
   liquidityScore        Float?
   pumpDumpRiskScore     Float?
   walletDistributionScore Float?
   contractAddress       String?       // From TokenHeader.platforms
   platform              String?       // e.g., "solana", "ethereum"
-  exchange             String?   // Added for Binance/Bybit listings
+  exchange              String?       // Comma-separated exchanges (e.g., "binance,bybit,mexc,htx,gate")
+  @@index([symbol])
+  @@index([exchange])
 }
 
 model TokenHistory {
@@ -62,4 +65,19 @@ model TokenHistory {
   timestamp   DateTime @default(now())
   token       Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
   @@index([tokenId, timestamp])
+}
+
+model TokenExchange {
+  id          Int      @id @default(autoincrement())
+  tokenId     String
+  exchange    String   // e.g., "binance", "bybit", "mexc", "htx", "gate"
+  symbol      String
+  lastPrice   Float?
+  volume      Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  token       Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  @@unique([tokenId, exchange])
+  @@index([symbol])
+  @@index([exchange])
 }
