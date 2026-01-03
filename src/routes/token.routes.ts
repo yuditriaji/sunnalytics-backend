@@ -27,4 +27,23 @@ router.post('/populate-exchange-tokens', populateExchangeTokens);
 router.post('/populate-detail', populateDetail);
 router.post('/update-token', updateTokenFromDetail);
 
+// Rate limiter status endpoint
+router.get('/rate-limiter-status', async (req: any, res: any) => {
+  try {
+    const { rateLimiter } = await import('../services/rateLimiter');
+    const status = rateLimiter.getStatus();
+    res.json({
+      status: 'success',
+      endpoints: status,
+      summary: {
+        totalEndpoints: Object.keys(status).length,
+        circuitOpenCount: Object.values(status).filter((s: any) => s.isCircuitOpen).length,
+        healthyEndpoints: Object.values(status).filter((s: any) => !s.isCircuitOpen && s.consecutiveFailures === 0).length
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to get rate limiter status', message: error.message });
+  }
+});
+
 export default router;

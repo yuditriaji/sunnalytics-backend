@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { logger } from '../services/logger';
 import { cache } from '../services/cache';
+import { rateLimiter } from '../services/rateLimiter';
 
 const BASE = 'https://api.coingecko.com/api/v3';
 
@@ -40,10 +41,13 @@ export async function fetchMarketData(maxRetries = 3): Promise<CoinGeckoToken[]>
   while (true) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const delay = Math.random() * 2000 + 1000 * Math.pow(2, attempt - 1);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-
         logger.info(`Attempting CoinGecko API call for page ${page}, attempt ${attempt}`);
+        
+        // Use rate limiter instead of manual delay
+        await rateLimiter.executeWithRateLimit('coingecko-api', async () => {
+          // Empty function as we just need the delay
+        });
+        
         const res = await axios.get(`${BASE}/coins/markets`, {
           params: {
             vs_currency: 'usd',
@@ -76,8 +80,10 @@ export async function fetchMarketData(maxRetries = 3): Promise<CoinGeckoToken[]>
       } catch (error: any) {
         logger.error(`CoinGecko API error for page ${page}, attempt ${attempt}: ${error.message}`);
         if (error.response?.status === 429) {
-          logger.warn(`Rate limit hit for page ${page}, backing off for ${10 * attempt} seconds`);
-          await new Promise((resolve) => setTimeout(resolve, 10000 * attempt));
+          const retryAfter = error.response.headers['retry-after'];
+          const backoffTime = retryAfter ? parseInt(retryAfter) * 1000 : 10000 * attempt;
+          logger.warn(`Rate limit hit for page ${page}, backing off for ${backoffTime/1000} seconds`);
+          await new Promise((resolve) => setTimeout(resolve, backoffTime));
           continue;
         }
         if (attempt === maxRetries) throw new Error(`Failed to fetch CoinGecko data for page ${page} after retries`);
@@ -96,8 +102,10 @@ export async function fetchMarketData(maxRetries = 3): Promise<CoinGeckoToken[]>
       }
 
       try {
-        const delay = Math.random() * 1000 + 1000;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        // Use rate limiter for coin details API calls
+        await rateLimiter.executeWithRateLimit('coingecko-details', async () => {
+          // Empty function as we just need the delay
+        });
 
         const details = await axios.get(`${BASE}/coins/${token.id}`, {
           headers: { 'Content-Type': 'application/json' },
@@ -118,7 +126,7 @@ export async function fetchMarketData(maxRetries = 3): Promise<CoinGeckoToken[]>
   return enrichedTokens;
 }
 
-export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'bybit_spot', 'mexc', 'huobi', 'gate'], maxRetries = 3): Promise<ExchangeToken[]> {
+export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'bybit_spot', 'mxc', 'huobi', 'gate'], maxRetries = 3): Promise<ExchangeToken[]> {
   const cacheKey = 'exchange_tokens';
   const cachedData = cache.get<ExchangeToken[]>(cacheKey);
   if (cachedData) {
@@ -134,10 +142,13 @@ export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'byb
     while (hasMore) {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const delay = Math.random() * 2000 + 1000 * Math.pow(2, attempt - 1);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-
           logger.info(`Fetching ${exchange} tickers, page ${page}, attempt ${attempt}`);
+          
+          // Use rate limiter for exchange API calls
+          await rateLimiter.executeWithRateLimit('coingecko-exchanges', async () => {
+            // Empty function as we just need the delay
+          });
+          
           const response = await axios.get(`${BASE}/exchanges/${exchange}/tickers`, {
             params: {
               per_page: 250,
@@ -158,10 +169,16 @@ export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'byb
               continue;
             }
             if (ticker.target === 'USDT') {
+              // Map exchange names to standard format
+              let exchangeName = exchange;
+              if (exchange === 'huobi') exchangeName = 'htx';
+              if (exchange === 'mxc') exchangeName = 'mexc';
+              if (exchange === 'okex') exchangeName = 'okx';
+              
               exchangeTokens.push({
                 coinId: ticker.coin_id,
                 symbol: ticker.base.toUpperCase(),
-                exchange: exchange === 'huobi' ? 'htx' : exchange,
+                exchange: exchangeName,
               });
             }
           }
@@ -172,8 +189,10 @@ export async function fetchExchangeTokens(exchanges: string[] = ['binance', 'byb
         } catch (error: any) {
           logger.error(`CoinGecko API error for ${exchange} tickers, page ${page}, attempt ${attempt}: ${error.message}`);
           if (error.response?.status === 429) {
-            logger.warn(`Rate limit hit for ${exchange}, page ${page}, backing off for ${10 * attempt} seconds`);
-            await new Promise((resolve) => setTimeout(resolve, 10000 * attempt));
+            const retryAfter = error.response.headers['retry-after'];
+            const backoffTime = retryAfter ? parseInt(retryAfter) * 1000 : 10000 * attempt;
+            logger.warn(`Rate limit hit for ${exchange}, page ${page}, backing off for ${backoffTime/1000} seconds`);
+            await new Promise((resolve) => setTimeout(resolve, backoffTime));
             continue;
           }
           if (attempt === maxRetries) {
