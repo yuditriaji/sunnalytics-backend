@@ -6,7 +6,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { clerkClient, ClerkExpressRequireAuth, ClerkExpressWithAuth, WithAuthProp } from '@clerk/clerk-sdk-node';
+import { clerkClient, ClerkExpressRequireAuth, ClerkExpressWithAuth } from '@clerk/clerk-sdk-node';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../services/logger';
 
@@ -30,7 +30,15 @@ export interface AuthenticatedRequest extends Request {
 }
 
 // Tier limits configuration
-export const TIER_LIMITS = {
+export interface TierConfig {
+    maxAlerts: number;
+    maxWatchlist: number;
+    maxApiCallsPerDay: number;
+    dataRefreshMinutes: number;
+    features: string[];
+}
+
+export const TIER_LIMITS: Record<string, TierConfig> = {
     free: {
         maxAlerts: 3,
         maxWatchlist: 10,
@@ -52,7 +60,7 @@ export const TIER_LIMITS = {
         dataRefreshMinutes: 1,
         features: ['basic_analytics', 'watchlist', 'alerts', 'advanced_analytics', 'export', 'api_access', 'realtime'],
     },
-} as const;
+};
 
 export type TierName = keyof typeof TIER_LIMITS;
 
@@ -78,7 +86,7 @@ export async function syncUser(req: AuthenticatedRequest, res: Response, next: N
         const clerkUserId = req.auth.userId;
 
         // Try to find existing user
-        let user = await prisma.user.findUnique({
+        let user = await (prisma as any).user.findUnique({
             where: { id: clerkUserId },
         });
 
@@ -86,7 +94,7 @@ export async function syncUser(req: AuthenticatedRequest, res: Response, next: N
         if (!user) {
             const clerkUser = await clerkClient.users.getUser(clerkUserId);
 
-            user = await prisma.user.create({
+            user = await (prisma as any).user.create({
                 data: {
                     id: clerkUserId,
                     email: clerkUser.emailAddresses[0]?.emailAddress || '',
@@ -114,7 +122,7 @@ export async function syncUser(req: AuthenticatedRequest, res: Response, next: N
         const now = new Date();
         const lastReset = new Date(user.lastApiReset);
         if (now.getDate() !== lastReset.getDate()) {
-            await prisma.user.update({
+            await (prisma as any).user.update({
                 where: { id: user.id },
                 data: { apiCallsToday: 0, lastApiReset: now },
             });
@@ -132,14 +140,14 @@ export async function syncUser(req: AuthenticatedRequest, res: Response, next: N
  * Require specific tier or higher
  */
 export function requireTier(minTier: TierName) {
-    const tierOrder: TierName[] = ['free', 'pro', 'whale'];
+    const tierOrder: string[] = ['free', 'pro', 'whale'];
 
     return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
         if (!req.user) {
             return res.status(401).json({ error: 'Authentication required' });
         }
 
-        const userTierIndex = tierOrder.indexOf(req.user.tier as TierName);
+        const userTierIndex = tierOrder.indexOf(req.user.tier);
         const requiredTierIndex = tierOrder.indexOf(minTier);
 
         if (userTierIndex < requiredTierIndex) {
@@ -164,8 +172,7 @@ export function requireFeature(feature: string) {
             return res.status(401).json({ error: 'Authentication required' });
         }
 
-        const tierName = req.user.tier as TierName;
-        const tierConfig = TIER_LIMITS[tierName] || TIER_LIMITS.free;
+        const tierConfig = TIER_LIMITS[req.user.tier] || TIER_LIMITS.free;
 
         if (!tierConfig.features.includes(feature)) {
             return res.status(403).json({
@@ -187,8 +194,7 @@ export async function trackApiUsage(req: AuthenticatedRequest, res: Response, ne
         return next();
     }
 
-    const tierName = req.user.tier as TierName;
-    const tierConfig = TIER_LIMITS[tierName] || TIER_LIMITS.free;
+    const tierConfig = TIER_LIMITS[req.user.tier] || TIER_LIMITS.free;
 
     // Unlimited for whale tier
     if (tierConfig.maxApiCallsPerDay === -1) {
@@ -206,7 +212,7 @@ export async function trackApiUsage(req: AuthenticatedRequest, res: Response, ne
     }
 
     // Increment counter
-    await prisma.user.update({
+    await (prisma as any).user.update({
         where: { id: req.user.id },
         data: { apiCallsToday: { increment: 1 } },
     });
@@ -217,6 +223,6 @@ export async function trackApiUsage(req: AuthenticatedRequest, res: Response, ne
 /**
  * Get user's tier limits
  */
-export function getTierLimits(tier: string): typeof TIER_LIMITS.free {
-    return TIER_LIMITS[tier as TierName] || TIER_LIMITS.free;
+export function getTierLimits(tier: string): TierConfig {
+    return TIER_LIMITS[tier] || TIER_LIMITS.free;
 }

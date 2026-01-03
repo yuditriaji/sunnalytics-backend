@@ -5,8 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/index.js",
+    "postinstall": "prisma generate",
     "test": "jest"
   },
   "keywords": [
@@ -22,6 +23,7 @@
   "type": "commonjs",
   "dependencies": {
     "@clerk/clerk-sdk-node": "^4.13.23",
+    "@prisma/client": "^6.9.0",
     "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "^1.98.2",
     "@types/axios": "^0.14.0",
@@ -37,7 +39,6 @@
     "zod": "^3.25.49"
   },
   "devDependencies": {
-    "@prisma/client": "^6.9.0",
     "@types/cors": "^2.8.18",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.15.29",

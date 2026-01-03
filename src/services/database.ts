@@ -44,7 +44,7 @@ class DatabaseService {
 
   private async testConnection(): Promise<boolean> {
     if (!this.prisma) return false;
-    
+
     try {
       await this.prisma.$executeRaw`SELECT 1`;
       logger.info('Database connection established successfully');
@@ -63,9 +63,9 @@ class DatabaseService {
 
     this.isConnecting = true;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts); // Exponential backoff
-    
+
     logger.warn(`Scheduling database reconnection attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts} in ${delay}ms`);
-    
+
     setTimeout(async () => {
       this.reconnectAttempts++;
       await this.reconnect();
@@ -79,9 +79,9 @@ class DatabaseService {
         await this.prisma.$disconnect();
         this.prisma = null;
       }
-      
+
       this.initializePrisma();
-      
+
       if (await this.testConnection()) {
         logger.info('Database reconnected successfully');
         return;
@@ -89,7 +89,7 @@ class DatabaseService {
     } catch (error: any) {
       logger.error('Database reconnection failed:', error.message);
     }
-    
+
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.scheduleReconnect();
     } else {
@@ -106,7 +106,7 @@ class DatabaseService {
       try {
         return await operation(this.prisma);
       } catch (error: any) {
-        const isConnectionError = 
+        const isConnectionError =
           error.message.includes('Server has closed the connection') ||
           error.message.includes('Connection terminated') ||
           error.message.includes('connect ECONNREFUSED') ||
@@ -118,23 +118,23 @@ class DatabaseService {
 
         if (isConnectionError && attempt < retries) {
           logger.warn(`Database operation failed (attempt ${attempt}/${retries}): ${error.message}. Retrying...`);
-          
+
           // Try to reconnect if connection error
           if (!await this.testConnection()) {
             this.scheduleReconnect();
-            
+
             // Wait for potential reconnection
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
           }
-          
+
           continue;
         }
-        
+
         // Re-throw the error if it's not a connection error or we've exhausted retries
         throw error;
       }
     }
-    
+
     throw new Error('All retry attempts exhausted');
   }
 
@@ -142,12 +142,12 @@ class DatabaseService {
     if (!this.prisma) {
       throw new Error('Database connection not available');
     }
-    
+
     // Test connection before returning client
     if (!await this.testConnection()) {
       throw new Error('Database connection is not healthy');
     }
-    
+
     return this.prisma;
   }
 
@@ -168,15 +168,15 @@ class DatabaseService {
       const start = Date.now();
       await this.prisma.$executeRaw`SELECT 1`;
       const responseTime = Date.now() - start;
-      
-      return { 
-        status: 'healthy', 
-        details: `Connection healthy (${responseTime}ms response time)` 
+
+      return {
+        status: 'healthy',
+        details: `Connection healthy (${responseTime}ms response time)`
       };
     } catch (error: any) {
-      return { 
-        status: 'unhealthy', 
-        details: `Connection failed: ${error.message}` 
+      return {
+        status: 'unhealthy',
+        details: `Connection failed: ${error.message}`
       };
     }
   }
@@ -185,9 +185,9 @@ class DatabaseService {
 // Export singleton instance
 export const databaseService = DatabaseService.getInstance();
 
-// Export convenience functions
-export async function withDatabase<T>(operation: (prisma: PrismaClient) => Promise<T>): Promise<T> {
-  return databaseService.executeWithRetry(operation);
+// Export convenience functions - cast to any during schema migration
+export async function withDatabase<T>(operation: (prisma: any) => Promise<T>): Promise<T> {
+  return databaseService.executeWithRetry(operation as any);
 }
 
 export async function getPrisma(): Promise<PrismaClient> {

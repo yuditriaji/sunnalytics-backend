@@ -11,15 +11,13 @@ import { AuthenticatedRequest, requireAuth, syncUser } from '../middleware/auth'
 import { logger } from '../services/logger';
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = new PrismaClient() as any;
 
 // Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-    apiVersion: '2024-12-18.acacia',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
 // Price IDs (configure these in your Stripe dashboard)
-const PRICE_IDS = {
+const PRICE_IDS: Record<string, string> = {
     pro: process.env.STRIPE_PRICE_PRO || 'price_pro_monthly',
     whale: process.env.STRIPE_PRICE_WHALE || 'price_whale_monthly',
 };
@@ -65,7 +63,7 @@ router.post('/create-checkout', requireAuth, syncUser, async (req: Authenticated
             payment_method_types: ['card'],
             line_items: [
                 {
-                    price: PRICE_IDS[tier as keyof typeof PRICE_IDS],
+                    price: PRICE_IDS[tier],
                     quantity: 1,
                 },
             ],
@@ -154,10 +152,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
             case 'customer.subscription.updated': {
                 const subscription = event.data.object as Stripe.Subscription;
-                const customer = await stripe.customers.retrieve(subscription.customer as string);
+                const customer = await stripe.customers.retrieve(subscription.customer as string) as Stripe.Customer;
 
-                if ('metadata' in customer && customer.metadata?.userId) {
-                    const periodEnd = new Date(subscription.current_period_end * 1000);
+                if (customer.metadata?.userId) {
+                    const periodEnd = new Date((subscription as any).current_period_end * 1000);
 
                     await prisma.user.update({
                         where: { id: customer.metadata.userId },
@@ -171,9 +169,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
             case 'customer.subscription.deleted': {
                 const subscription = event.data.object as Stripe.Subscription;
-                const customer = await stripe.customers.retrieve(subscription.customer as string);
+                const customer = await stripe.customers.retrieve(subscription.customer as string) as Stripe.Customer;
 
-                if ('metadata' in customer && customer.metadata?.userId) {
+                if (customer.metadata?.userId) {
                     await prisma.user.update({
                         where: { id: customer.metadata.userId },
                         data: {
@@ -217,10 +215,11 @@ router.get('/status', requireAuth, syncUser, async (req: AuthenticatedRequest, r
             return res.status(404).json({ error: 'User not found' });
         }
 
-        let stripeSubscription = null;
+        let cancelAtPeriodEnd = false;
         if (user.subscriptionId) {
             try {
-                stripeSubscription = await stripe.subscriptions.retrieve(user.subscriptionId);
+                const stripeSubscription = await stripe.subscriptions.retrieve(user.subscriptionId);
+                cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
             } catch (e) {
                 // Subscription might not exist anymore
             }
@@ -230,7 +229,7 @@ router.get('/status', requireAuth, syncUser, async (req: AuthenticatedRequest, r
             tier: user.tier,
             isActive: user.tier !== 'free',
             subscriptionEnd: user.subscriptionEnd,
-            cancelAtPeriodEnd: stripeSubscription?.cancel_at_period_end || false,
+            cancelAtPeriodEnd,
         });
     } catch (error: any) {
         logger.error(`Error fetching subscription: ${error.message}`);

@@ -14,23 +14,23 @@ export async function refreshTokens(req: Request, res: Response) {
     // Import the new data pipeline
     const { dataPipeline } = await import('../services/dataPipeline');
     const { rateLimiter } = await import('../services/rateLimiter');
-    
+
     logger.info('🚀 Starting comprehensive data pipeline with rate limiting');
-    
+
     // Run the comprehensive data pipeline
     const stats = await dataPipeline.runComprehensivePipeline();
-    
+
     // Get rate limiter status
     const rateLimiterStatus = rateLimiter.getStatus();
-    
+
     // Get data quality report
     const qualityReport = await dataPipeline.getQualityReport();
-    
+
     const response = {
       message: 'Comprehensive data pipeline completed successfully',
       status: 'success',
       pipeline: {
-        duration: stats.endTime ? 
+        duration: stats.endTime ?
           `${Math.round((stats.endTime.getTime() - stats.startTime.getTime()) / 1000)}s` : 'ongoing',
         processed: stats.totalProcessed,
         successful: stats.successfulUpserts,
@@ -85,13 +85,13 @@ export async function refreshTokens(req: Request, res: Response) {
         }
       }
     };
-    
+
     res.json(response);
-    
+
   } catch (error: any) {
     logger.error(`Comprehensive data pipeline failed: ${error.message}`);
-    res.status(500).json({ 
-      error: 'Data pipeline failed', 
+    res.status(500).json({
+      error: 'Data pipeline failed',
       message: error.message,
       status: 'failed'
     });
@@ -166,16 +166,16 @@ export async function getTokens(req: Request, res: Response) {
     const { category, exchange } = req.query;
     const tokens = await withDatabase(async (prisma) => {
       return await prisma.token.findMany({
-      where: {
-        category: category ? { equals: category as string } : undefined,
-        exchange: exchange ? { contains: exchange as string } : undefined,
-      },
-      orderBy: { updatedAt: 'desc' },
+        where: {
+          category: category ? { equals: category as string } : undefined,
+          exchange: exchange ? { contains: exchange as string } : undefined,
+        },
+        orderBy: { updatedAt: 'desc' },
       });
     });
 
     logger.info(`Returning ${tokens.length} tokens from database`);
-    const enrichedTokens = tokens.map((token) => {
+    const enrichedTokens = tokens.map((token: any) => {
       const volumeMarketCapRatio = token.marketCap && token.marketCap > 0 ? (token.volume24h || 0) / token.marketCap : 0;
 
       return {
@@ -250,9 +250,9 @@ export async function getTokenHistory(req: Request, res: Response) {
     const { id } = req.params;
     const history = await withDatabase(async (prisma) => {
       return await prisma.tokenHistory.findMany({
-      where: { tokenId: id },
-      orderBy: { timestamp: 'asc' },
-      take: 100,
+        where: { tokenId: id },
+        orderBy: { timestamp: 'asc' },
+        take: 100,
       });
     });
     res.json(history);
@@ -267,20 +267,20 @@ export async function createToken(req: Request, res: Response) {
     const { name, symbol, category, price, marketCap, volume24h, transferVolume24h, priceChange24h, walletDistributionScore, exchange } = req.body;
     const token = await withDatabase(async (prisma) => {
       return await prisma.token.create({
-      data: {
-        name,
-        symbol: symbol ? symbol.toLowerCase() : '',
-        category: category || 'uncategorized',
-        price,
-        marketCap,
-        volume24h,
-        transferVolume24h,
-        priceChange24h,
-        walletDistributionScore,
-        exchange,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+        data: {
+          name,
+          symbol: symbol ? symbol.toLowerCase() : '',
+          category: category || 'uncategorized',
+          price,
+          marketCap,
+          volume24h,
+          transferVolume24h,
+          priceChange24h,
+          walletDistributionScore,
+          exchange,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       });
     });
 
@@ -298,20 +298,20 @@ export async function updateToken(req: Request, res: Response) {
     const { name, symbol, category, price, marketCap, volume24h, transferVolume24h, priceChange24h, walletDistributionScore, exchange } = req.body;
     const token = await withDatabase(async (prisma) => {
       return await prisma.token.update({
-      where: { id },
-      data: {
-        name,
-        symbol: symbol?.toLowerCase(),
-        category: category || 'uncategorized',
-        price,
-        marketCap,
-        volume24h,
-        transferVolume24h,
-        priceChange24h,
-        walletDistributionScore,
-        exchange,
-        updatedAt: new Date(),
-      },
+        where: { id },
+        data: {
+          name,
+          symbol: symbol?.toLowerCase(),
+          category: category || 'uncategorized',
+          price,
+          marketCap,
+          volume24h,
+          transferVolume24h,
+          priceChange24h,
+          walletDistributionScore,
+          exchange,
+          updatedAt: new Date(),
+        },
       });
     });
 
@@ -364,22 +364,22 @@ export async function populateHeader(req: Request, res: Response) {
         batch.map(async (token: any) => {
           await withDatabase(async (prisma) => {
             await prisma.tokenHeader.upsert({
-            where: { id: token.id },
-            update: {
-              symbol: token.symbol ? token.symbol.toLowerCase() : '',
-              name: token.name,
-              platforms: token.platforms || {},
-              updatedAt: new Date(),
-            },
-            create: {
-              id: token.id,
-              symbol: token.symbol ? token.symbol.toLowerCase() : '',
-              name: token.name,
-              platforms: token.platforms || {},
-              exchange: null,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
+              where: { id: token.id },
+              update: {
+                symbol: token.symbol ? token.symbol.toLowerCase() : '',
+                name: token.name,
+                platforms: token.platforms || {},
+                updatedAt: new Date(),
+              },
+              create: {
+                id: token.id,
+                symbol: token.symbol ? token.symbol.toLowerCase() : '',
+                name: token.name,
+                platforms: token.platforms || {},
+                exchange: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
             });
           });
           upsertCount++;
@@ -410,29 +410,29 @@ export async function populateExchangeTokens(req: Request, res: Response) {
             await withDatabase(async (prisma) => {
               // Verify TokenHeader exists
               const existingHeader = await prisma.tokenHeader.findUnique({
-              where: { id: token.coinId },
-            });
+                where: { id: token.coinId },
+              });
 
-            if (!existingHeader) {
-              logger.warn(`No TokenHeader found for coinId ${token.coinId}, creating new entry`);
-            }
+              if (!existingHeader) {
+                logger.warn(`No TokenHeader found for coinId ${token.coinId}, creating new entry`);
+              }
 
-            await prisma.tokenHeader.upsert({
-              where: { id: token.coinId },
-              update: {
-                symbol: token.symbol ? token.symbol.toLowerCase() : '',
-                exchange: token.exchange,
-                updatedAt: new Date(),
-              },
-              create: {
-                id: token.coinId,
-                symbol: token.symbol ? token.symbol.toLowerCase() : '',
-                name: token.symbol, // Fallback name
-                platforms: {},
-                exchange: token.exchange,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
+              await prisma.tokenHeader.upsert({
+                where: { id: token.coinId },
+                update: {
+                  symbol: token.symbol ? token.symbol.toLowerCase() : '',
+                  exchange: token.exchange,
+                  updatedAt: new Date(),
+                },
+                create: {
+                  id: token.coinId,
+                  symbol: token.symbol ? token.symbol.toLowerCase() : '',
+                  name: token.symbol, // Fallback name
+                  platforms: {},
+                  exchange: token.exchange,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
               });
               upsertCount++;
             });
@@ -456,9 +456,9 @@ export async function populateDetail(req: Request, res: Response) {
   try {
     const tokens = await withDatabase(async (prisma) => {
       return await prisma.token.findMany({
-      where: { contractAddress: { not: null }, platform: { not: null } }, // Removed exchange filter
-      select: { id: true, symbol: true, contractAddress: true, platform: true },
-      take: 1000, // Increased limit
+        where: { contractAddress: { not: null }, platform: { not: null } }, // Removed exchange filter
+        select: { id: true, symbol: true, contractAddress: true, platform: true },
+        take: 1000, // Increased limit
       });
     });
 
@@ -479,62 +479,62 @@ export async function populateDetail(req: Request, res: Response) {
 
           await withDatabase(async (prisma) => {
             const header = await prisma.tokenHeader.findFirst({
-            where: { symbol: token.symbol ? token.symbol.toLowerCase() : '' },
-            select: { id: true },
-          });
-          if (!header) {
-            logger.warn(`No TokenHeader found for symbol ${token.symbol}`);
-            return;
-          }
+              where: { symbol: token.symbol ? token.symbol.toLowerCase() : '' },
+              select: { id: true },
+            });
+            if (!header) {
+              logger.warn(`No TokenHeader found for symbol ${token.symbol}`);
+              return;
+            }
 
-          await prisma.token.update({
-            where: { id: token.id },
-            data: {
-              contractAddress: token.contractAddress,
-              platform: token.platform,
-            },
-          });
+            await prisma.token.update({
+              where: { id: token.id },
+              data: {
+                contractAddress: token.contractAddress,
+                platform: token.platform,
+              },
+            });
 
-          const onChainData = await fetchOnChainData(
-            header.id,
-            token.symbol,
-            token.contractAddress,
-            token.platform
-          );
-          if (!onChainData) {
-            logger.warn(`No on-chain data for ${token.symbol}`);
-            return;
-          }
+            const onChainData = await fetchOnChainData(
+              header.id,
+              token.symbol,
+              token.contractAddress,
+              token.platform
+            );
+            if (!onChainData) {
+              logger.warn(`No on-chain data for ${token.symbol}`);
+              return;
+            }
 
-          logger.debug(`On-chain data for ${token.symbol}: ${JSON.stringify(onChainData)}`);
+            logger.debug(`On-chain data for ${token.symbol}: ${JSON.stringify(onChainData)}`);
 
-          await prisma.tokenDetail.upsert({
-            where: { id: header.id },
-            update: {
-              symbol: token.symbol ? token.symbol.toLowerCase() : '',
-              platform: token.platform,
-              contractAddress: token.contractAddress,
-              walletDistributionScore: onChainData.walletDistributionScore,
-              poolLiquidity: onChainData.poolLiquidity,
-              txActivityScore: onChainData.txActivityScore,
-              transferVolume24h: onChainData.transferVolume24h,
-              updatedAt: new Date(),
-            },
-            create: {
-              id: header.id,
-              symbol: token.symbol ? token.symbol.toLowerCase() : '',
-              platform: token.platform,
-              contractAddress: token.contractAddress,
-              walletDistributionScore: onChainData.walletDistributionScore,
-              poolLiquidity: onChainData.poolLiquidity,
-              txActivityScore: onChainData.txActivityScore,
-              transferVolume24h: onChainData.transferVolume24h,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          });
-          upsertCount++;
-          logger.info(`Upserted TokenDetail for ${token.symbol}`);
+            await prisma.tokenDetail.upsert({
+              where: { id: header.id },
+              update: {
+                symbol: token.symbol ? token.symbol.toLowerCase() : '',
+                platform: token.platform,
+                contractAddress: token.contractAddress,
+                walletDistributionScore: onChainData.walletDistributionScore,
+                poolLiquidity: onChainData.poolLiquidity,
+                txActivityScore: onChainData.txActivityScore,
+                transferVolume24h: onChainData.transferVolume24h,
+                updatedAt: new Date(),
+              },
+              create: {
+                id: header.id,
+                symbol: token.symbol ? token.symbol.toLowerCase() : '',
+                platform: token.platform,
+                contractAddress: token.contractAddress,
+                walletDistributionScore: onChainData.walletDistributionScore,
+                poolLiquidity: onChainData.poolLiquidity,
+                txActivityScore: onChainData.txActivityScore,
+                transferVolume24h: onChainData.transferVolume24h,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            });
+            upsertCount++;
+            logger.info(`Upserted TokenDetail for ${token.symbol}`);
           });
         })
       );
@@ -553,13 +553,13 @@ export async function updateTokenFromDetail(req: Request, res: Response) {
   try {
     const details = await withDatabase(async (prisma) => {
       return await prisma.tokenDetail.findMany({
-      select: {
-        symbol: true,
-        walletDistributionScore: true,
-        poolLiquidity: true,
-        txActivityScore: true,
-        transferVolume24h: true,
-      },
+        select: {
+          symbol: true,
+          walletDistributionScore: true,
+          poolLiquidity: true,
+          txActivityScore: true,
+          transferVolume24h: true,
+        },
       });
     });
 
@@ -571,25 +571,25 @@ export async function updateTokenFromDetail(req: Request, res: Response) {
         batch.map(async (detail: any) => {
           await withDatabase(async (prisma) => {
             const token = await prisma.token.findUnique({
-            where: { symbol: detail.symbol ? detail.symbol.toLowerCase() : '' },
-          });
-          if (!token) {
-            logger.warn(`No Token found for symbol ${detail.symbol}`);
-            return;
-          }
+              where: { symbol: detail.symbol ? detail.symbol.toLowerCase() : '' },
+            });
+            if (!token) {
+              logger.warn(`No Token found for symbol ${detail.symbol}`);
+              return;
+            }
 
-          const liquidityScore = detail.poolLiquidity
-            ? Math.min((detail.poolLiquidity / 1000000) * 100, 100)
-            : token.liquidityScore || 0;
+            const liquidityScore = detail.poolLiquidity
+              ? Math.min((detail.poolLiquidity / 1000000) * 100, 100)
+              : token.liquidityScore || 0;
 
-          await prisma.token.update({
-            where: { symbol: detail.symbol ? detail.symbol.toLowerCase() : '' },
-            data: {
-              walletDistributionScore: detail.walletDistributionScore || 0,
-              transferVolume24h: detail.transferVolume24h || 0,
-              liquidityScore,
-              updatedAt: new Date(),
-            },
+            await prisma.token.update({
+              where: { symbol: detail.symbol ? detail.symbol.toLowerCase() : '' },
+              data: {
+                walletDistributionScore: detail.walletDistributionScore || 0,
+                transferVolume24h: detail.transferVolume24h || 0,
+                liquidityScore,
+                updatedAt: new Date(),
+              },
             });
             updateCount++;
           });

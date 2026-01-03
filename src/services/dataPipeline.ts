@@ -8,7 +8,8 @@ import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics } from '../utils/tokenAnalytics';
 import axios from 'axios';
 
-const prisma = new PrismaClient();
+// Cast to any to avoid type conflicts during schema migration
+const prisma = new PrismaClient() as any;
 
 interface PipelineStats {
   startTime: Date;
@@ -93,10 +94,10 @@ class ComprehensiveDataPipeline {
 
       // Phase 7: Data Quality Validation & Reporting
       const qualityReport = await this.validateDataQuality();
-      
+
       this.stats.endTime = new Date();
       const duration = this.stats.endTime.getTime() - this.stats.startTime.getTime();
-      
+
       logger.info('✅ Data pipeline completed successfully', {
         duration: `${Math.round(duration / 1000)}s`,
         processed: this.stats.totalProcessed,
@@ -117,28 +118,28 @@ class ComprehensiveDataPipeline {
 
   private async ensureTokenHeaders(): Promise<void> {
     logger.info('📊 Phase 1: Ensuring token headers are populated');
-    
+
     const headerCount = await prisma.tokenHeader.count();
     if (headerCount < 1000) {
       logger.info('Token headers need population, fetching from CoinGecko...');
-      
+
       try {
         await rateLimiter.executeWithRateLimit('coingecko', async () => {
           const response = await axios.get('https://api.coingecko.com/api/v3/coins/list', {
             params: { include_platform: true },
             timeout: 30000
           });
-          
+
           const tokens = response.data;
           this.stats.phases.tokenHeaders.processed = tokens.length;
 
           const batchSize = 100;
           for (let i = 0; i < tokens.length; i += batchSize) {
             const batch = tokens.slice(i, i + batchSize);
-            
+
             try {
               await prisma.$transaction(
-                batch.map((token: any) => 
+                batch.map((token: any) =>
                   prisma.tokenHeader.upsert({
                     where: { id: token.id },
                     update: {
@@ -159,16 +160,16 @@ class ComprehensiveDataPipeline {
                   })
                 )
               );
-              
+
               this.stats.phases.tokenHeaders.success += batch.length;
-              
+
             } catch (error: any) {
               logger.error(`Token header batch failed: ${error.message}`);
               this.stats.phases.tokenHeaders.errors.push(`Batch ${i}: ${error.message}`);
             }
           }
         }, 'high');
-        
+
       } catch (error: any) {
         logger.error(`Token header population failed: ${error.message}`);
         this.stats.phases.tokenHeaders.errors.push(error.message);
@@ -182,7 +183,7 @@ class ComprehensiveDataPipeline {
     logger.info('🏦 Phase 2: Populating exchange token mappings');
 
     const exchanges = ['binance', 'bybit_spot', 'mexc', 'huobi', 'gate', 'kucoin', 'okx'];
-    
+
     for (const exchange of exchanges) {
       try {
         await rateLimiter.executeWithRateLimit('coingecko', async () => {
@@ -267,11 +268,11 @@ class ComprehensiveDataPipeline {
     const batchSize = 10;
     for (let i = 0; i < tokensWithExchanges.length; i += batchSize) {
       const batch = tokensWithExchanges.slice(i, i + batchSize);
-      
+
       try {
         await rateLimiter.executeWithRateLimit('coingecko', async () => {
           // Fetch market data for this batch
-          const ids = batch.map(t => t.id).join(',');
+          const ids = batch.map((t: any) => t.id).join(',');
           const response = await axios.get('https://api.coingecko.com/api/v3/simple/price', {
             params: {
               ids,
@@ -412,7 +413,7 @@ class ComprehensiveDataPipeline {
     try {
       await rateLimiter.executeWithRateLimit('solana', async () => {
         const solanaTokens = await fetchBitqueryTokens();
-        
+
         for (const token of solanaTokens) {
           try {
             // Find existing token or create new one
@@ -523,7 +524,7 @@ class ComprehensiveDataPipeline {
             where: { id: token.id },
             data: {
               walletDistributionScore: onChainData.walletDistributionScore,
-              liquidityScore: metrics.volumeMarketCapRatio > 0 ? 
+              liquidityScore: metrics.volumeMarketCapRatio > 0 ?
                 Math.min(metrics.volumeMarketCapRatio * 100, 100) : null,
               pumpDumpRiskScore: metrics.pumpDumpRiskScore || null,
               updatedAt: new Date()
@@ -652,7 +653,7 @@ class ComprehensiveDataPipeline {
   // Helper methods
   private extractContractAddress(platforms: any): string | undefined {
     if (!platforms || typeof platforms !== 'object') return undefined;
-    
+
     const supportedPlatforms = ['solana', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'avalanche', 'bnb'];
     for (const platform of supportedPlatforms) {
       if (platforms[platform]) return platforms[platform];
@@ -662,7 +663,7 @@ class ComprehensiveDataPipeline {
 
   private extractPlatform(platforms: any): string | undefined {
     if (!platforms || typeof platforms !== 'object') return undefined;
-    
+
     const supportedPlatforms = ['solana', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'avalanche', 'bnb'];
     return supportedPlatforms.find(p => platforms[p]);
   }
@@ -670,12 +671,12 @@ class ComprehensiveDataPipeline {
   private determineTokenCategory(symbol: string, data: any): string {
     const memecoins = ['doge', 'shib', 'pepe', 'floki', 'bonk', 'wif'];
     const defiTokens = ['uni', 'aave', 'comp', 'sushi', 'cake', 'crv'];
-    
+
     const symbolLower = symbol.toLowerCase();
-    
+
     if (memecoins.includes(symbolLower)) return 'memecoin';
     if (defiTokens.includes(symbolLower)) return 'defi';
-    
+
     return 'altcoin';
   }
 

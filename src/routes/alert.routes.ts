@@ -11,7 +11,7 @@ import { logger } from '../services/logger';
 import { z } from 'zod';
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = new PrismaClient() as any;
 
 // Validation schemas
 const createAlertSchema = z.object({
@@ -52,7 +52,6 @@ router.get('/', async (req: AuthenticatedRequest, res) => {
                         id: true,
                         name: true,
                         symbol: true,
-                        chain: true,
                         price: true,
                     },
                 },
@@ -90,7 +89,7 @@ router.post('/', async (req: AuthenticatedRequest, res) => {
         const { tokenId, alertType, threshold, channels } = validation.data;
         const tierLimits = getTierLimits(req.user!.tier);
 
-        // Check tier limit
+        // Check tier limit (skip if unlimited)
         if (tierLimits.maxAlerts !== -1 && req.user!.alertCount >= tierLimits.maxAlerts) {
             return res.status(403).json({
                 error: 'Alert limit reached',

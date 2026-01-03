@@ -10,7 +10,7 @@ import { AuthenticatedRequest, requireAuth, syncUser, getTierLimits } from '../m
 import { logger } from '../services/logger';
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = new PrismaClient() as any;
 
 // All user routes require authentication
 router.use(requireAuth);
@@ -116,7 +116,6 @@ router.get('/me/watchlist', async (req: AuthenticatedRequest, res) => {
                 id: true,
                 name: true,
                 symbol: true,
-                chain: true,
                 price: true,
                 priceChange24h: true,
                 marketCap: true,
@@ -144,7 +143,7 @@ router.post('/me/watchlist/:tokenId', async (req: AuthenticatedRequest, res) => 
         const { tokenId } = req.params;
         const tierLimits = getTierLimits(req.user!.tier);
 
-        // Check tier limit
+        // Check tier limit (skip if unlimited)
         if (tierLimits.maxWatchlist !== -1 && req.user!.watchlistCount >= tierLimits.maxWatchlist) {
             return res.status(403).json({
                 error: 'Watchlist limit reached',
@@ -196,7 +195,7 @@ router.delete('/me/watchlist/:tokenId', async (req: AuthenticatedRequest, res) =
             return res.status(404).json({ error: 'Token not in watchlist' });
         }
 
-        const updatedWatchlist = user.watchlist.filter(id => id !== tokenId);
+        const updatedWatchlist = user.watchlist.filter((id: string) => id !== tokenId);
 
         await prisma.user.update({
             where: { id: req.user!.id },
