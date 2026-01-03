@@ -29,18 +29,18 @@ class SmartRateLimiter {
   }
 
   private initializeEndpoints() {
-    // CoinGecko configuration - very strict rate limits
+    // CoinGecko configuration - optimized for free tier (30 req/min with pacing)
     this.endpoints.set('coingecko', {
       name: 'CoinGecko',
       baseUrl: 'https://api.coingecko.com/api/v3',
       config: {
-        maxRequestsPerMinute: 10, // Conservative for free tier
-        maxRequestsPerHour: 500,
-        baseDelay: 6000, // 6 seconds base delay
-        maxDelay: 60000, // Max 1 minute delay
+        maxRequestsPerMinute: 30, // CoinGecko free tier allows ~30/min
+        maxRequestsPerHour: 1000,
+        baseDelay: 2000, // 2 seconds base delay (was 6s)
+        maxDelay: 30000, // Max 30 second delay (was 60s)
         backoffMultiplier: 1.5,
-        circuitBreakerThreshold: 3,
-        circuitBreakerTimeout: 300000 // 5 minutes
+        circuitBreakerThreshold: 5, // More tolerance (was 3)
+        circuitBreakerTimeout: 120000 // 2 minutes (was 5)
       },
       requestTimes: [],
       failureCount: 0,
@@ -111,7 +111,7 @@ class SmartRateLimiter {
   }
 
   async executeWithRateLimit<T>(
-    endpointName: string, 
+    endpointName: string,
     operation: () => Promise<T>,
     priority: 'high' | 'medium' | 'low' = 'medium'
   ): Promise<T> {
@@ -136,11 +136,11 @@ class SmartRateLimiter {
 
       // Execute operation
       const result = await operation();
-      
+
       // Reset failure count on success
       endpoint.consecutiveFailures = 0;
       endpoint.failureCount = Math.max(0, endpoint.failureCount - 1);
-      
+
       logger.debug(`${endpoint.name} request successful`);
       return result;
 
@@ -153,15 +153,15 @@ class SmartRateLimiter {
   private async waitForRateLimit(endpoint: ApiEndpoint, priority: 'high' | 'medium' | 'low') {
     const now = Date.now();
     const { config } = endpoint;
-    
+
     // Clean up old request times
     this.cleanupOldRequests(endpoint);
-    
+
     // Check minute limit
     const requestsInLastMinute = endpoint.requestTimes.filter(
       time => now - time < 60000
     ).length;
-    
+
     // Check hour limit
     const requestsInLastHour = endpoint.requestTimes.filter(
       time => now - time < 3600000
@@ -169,12 +169,12 @@ class SmartRateLimiter {
 
     // Calculate delay based on current load and failures
     let delay = config.baseDelay;
-    
+
     // Increase delay based on recent requests
     if (requestsInLastMinute >= config.maxRequestsPerMinute * 0.8) {
       delay = Math.min(delay * 2, config.maxDelay);
     }
-    
+
     if (requestsInLastHour >= config.maxRequestsPerHour * 0.8) {
       delay = Math.min(delay * 1.5, config.maxDelay);
     }
@@ -223,7 +223,7 @@ class SmartRateLimiter {
         status: error.response?.status,
         consecutiveFailures: endpoint.consecutiveFailures
       });
-      
+
       // Aggressive backoff for rate limits
       const backoffTime = Math.min(
         endpoint.config.baseDelay * Math.pow(2, endpoint.consecutiveFailures),
@@ -269,11 +269,11 @@ class SmartRateLimiter {
     if (!error.response) return false;
     const status = error.response.status;
     const message = error.message?.toLowerCase() || '';
-    
-    return status === 429 || 
-           status === 403 ||
-           message.includes('rate limit') ||
-           message.includes('too many requests');
+
+    return status === 429 ||
+      status === 403 ||
+      message.includes('rate limit') ||
+      message.includes('too many requests');
   }
 
   private cleanupOldRequests(endpoint: ApiEndpoint) {
@@ -288,7 +288,7 @@ class SmartRateLimiter {
   // Get current status of all endpoints
   getStatus(): Record<string, any> {
     const status: Record<string, any> = {};
-    
+
     for (const [name, endpoint] of this.endpoints) {
       const now = Date.now();
       status[name] = {
@@ -305,7 +305,7 @@ class SmartRateLimiter {
         lastFailure: endpoint.lastFailureTime ? new Date(endpoint.lastFailureTime) : null
       };
     }
-    
+
     return status;
   }
 

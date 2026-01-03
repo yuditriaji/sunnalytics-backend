@@ -259,13 +259,14 @@ class ComprehensiveDataPipeline {
     // Get tokens with exchange mappings
     const tokensWithExchanges = await prisma.tokenHeader.findMany({
       where: { exchange: { not: null } },
-      select: { id: true, symbol: true, platforms: true, exchange: true }
+      select: { id: true, symbol: true, platforms: true, exchange: true },
+      take: 1000 // Limit to 1000 tokens for faster sync
     });
 
     logger.info(`Found ${tokensWithExchanges.length} tokens with exchange mappings`);
 
     // Process in smaller batches to respect rate limits
-    const batchSize = 10;
+    const batchSize = 100; // Increased from 10 to 100 (10x faster)
     for (let i = 0; i < tokensWithExchanges.length; i += batchSize) {
       const batch = tokensWithExchanges.slice(i, i + batchSize);
 
@@ -346,16 +347,17 @@ class ComprehensiveDataPipeline {
                 }
               });
 
-              // Create history record
-              await prisma.tokenHistory.create({
-                data: {
-                  tokenId: token.id,
-                  price: sanitizedData.price,
-                  marketCap: sanitizedData.marketCap,
-                  volume24h: sanitizedData.volume24h,
-                  timestamp: new Date()
-                }
-              });
+              // Skip history record during regular sync - creates too many records
+              // History should be created on a scheduled basis (e.g., hourly snapshots)
+              // await prisma.tokenHistory.create({
+              //   data: {
+              //     tokenId: token.id,
+              //     price: sanitizedData.price,
+              //     marketCap: sanitizedData.marketCap,
+              //     volume24h: sanitizedData.volume24h,
+              //     timestamp: new Date()
+              //   }
+              // });
 
               // Create/update exchange records
               if (sanitizedData.exchange) {
