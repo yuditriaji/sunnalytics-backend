@@ -8,6 +8,7 @@ import tokenRoutes from './routes/token.routes';
 import userRoutes from './routes/user.routes';
 import alertRoutes from './routes/alert.routes';
 import subscriptionRoutes from './routes/subscription.routes';
+import walletRoutes from './routes/wallet.routes';
 import { validateEnhancedEnv } from './utils/enhancedValidation';
 import { dataQualityMonitor } from './services/dataQuality';
 
@@ -98,6 +99,7 @@ app.use('/api/tokens', tokenRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/wallets', walletRoutes);
 
 // Error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {

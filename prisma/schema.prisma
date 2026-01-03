@@ -218,6 +218,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   alerts    Alert[]
+  wallets   WalletConnection[]
+  exchangeConnections ExchangeConnection[]
 
   @@index([tier])
   @@index([stripeCustomerId])
@@ -271,4 +273,112 @@ model DataSourceHealth {
   errorMessage String?
 
   @@map("data_source_health")
+}
+
+// =============================================================================
+// WALLET TRACKING (on-chain wallet connections)
+// =============================================================================
+
+model WalletConnection {
+  id        String   @id @default(uuid())
+  userId    String
+  chain     String   @default("solana") // solana, ethereum, bsc, base, arbitrum
+  address   String
+  label     String?  // "Main Wallet", "Trading", etc.
+
+  // Sync status
+  lastSynced DateTime?
+  syncStatus String   @default("pending") // pending, syncing, success, error
+  syncError  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings WalletHolding[]
+
+  @@unique([userId, chain, address])
+  @@index([userId])
+  @@index([address])
+}
+
+model WalletHolding {
+  id       String @id @default(uuid())
+  walletId String
+
+  // Token info
+  tokenMint String  // Token mint/contract address
+  symbol    String
+  name      String?
+  logoUrl   String?
+
+  // Balance
+  amount   Decimal @db.Decimal(36, 18)
+  decimals Int     @default(9)
+
+  // Value
+  priceUsd Decimal? @db.Decimal(24, 12)
+  valueUsd Decimal? @db.Decimal(24, 12)
+
+  updatedAt DateTime @updatedAt
+
+  wallet WalletConnection @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, tokenMint])
+  @@index([walletId])
+}
+
+// =============================================================================
+// CEX EXCHANGE CONNECTIONS (for Phase 5)
+// =============================================================================
+
+model ExchangeConnection {
+  id       String @id @default(uuid())
+  userId   String
+  exchange String // binance, bybit, okx
+
+  // Encrypted credentials (AES-256)
+  apiKeyEncrypted    String
+  apiSecretEncrypted String
+
+  // Permissions (verified on add)
+  canRead  Boolean @default(true)
+  canTrade Boolean @default(false) // We reject if true
+
+  // Sync status
+  lastSynced DateTime?
+  syncStatus String   @default("pending")
+  syncError  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  holdings ExchangeHolding[]
+
+  @@unique([userId, exchange])
+  @@index([userId])
+}
+
+model ExchangeHolding {
+  id           String @id @default(uuid())
+  connectionId String
+
+  // Asset info
+  symbol String // BTC, ETH, SOL
+
+  // Balance
+  free   Decimal @db.Decimal(24, 12) // Available
+  locked Decimal @db.Decimal(24, 12) // In orders
+  total  Decimal @db.Decimal(24, 12) // free + locked
+
+  // Value
+  valueUsd Decimal? @db.Decimal(24, 12)
+
+  updatedAt DateTime @updatedAt
+
+  connection ExchangeConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, symbol])
+  @@index([connectionId])
 }
