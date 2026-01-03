@@ -7,77 +7,227 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// =============================================================================
+// TOKEN METADATA (from CoinGecko/aggregators)
+// =============================================================================
+
 model TokenHeader {
-  id        String   @id // CoinGecko ID (e.g., "0x")
-  symbol    String   // e.g., "ZRX"
-  name      String   // e.g., "0x Protocol"
-  platforms Json     // e.g., { "ethereum": "0xe41d2489571d322189246dafa5ebde1f4699f498" }
-  exchange  String?  // Comma-separated exchanges (e.g., "binance,bybit,mexc,htx,gate")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String       @id // CoinGecko ID (e.g., "bitcoin", "solana")
+  symbol      String // e.g., "BTC", "SOL"
+  name        String // e.g., "Bitcoin", "Solana"
+  platforms   Json // e.g., { "ethereum": "0x...", "solana": "..." }
+  exchange    String? // Comma-separated CEX listings
+  logoUrl     String? // Token logo URL
+  website     String? // Official website
+  twitter     String? // Twitter handle
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   tokenDetail TokenDetail?
+
+  @@index([symbol])
 }
+
+// =============================================================================
+// ON-CHAIN ANALYTICS (your differentiating data - direct from RPC)
+// =============================================================================
 
 model TokenDetail {
-  id                    String   @id // CoinGecko ID (e.g., "0x")
-  symbol                String   // e.g., "ZRX"
-  platform              String   // e.g., "solana", "ethereum"
-  contractAddress       String   // e.g., "0xe41d2489571d322189246dafa5ebde1f4699f498"
-  walletDistributionScore Float?   // e.g., 80
-  poolLiquidity         Float?   // e.g., 500000 (USD, Solana only)
-  txActivityScore       Float?   // e.g., 75 (Solana only)
-  transferVolume24h     Float?   // e.g., 1000000 (USD, Bitquery)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  tokenHeader          TokenHeader? @relation(fields: [id], references: [id])
+  id              String @id // CoinGecko ID
+  symbol          String
+  chain           String // solana, ethereum, bsc, base, arbitrum
+  contractAddress String
+
+  // On-chain analytics (YOUR MOAT - direct from RPC/Helius)
+  walletDistributionScore Float? // Holder concentration score (0-100)
+  poolLiquidity           Float? // DEX liquidity in USD
+  txActivityScore         Float? // Transaction activity score
+  transferVolume24h       Float? // 24h transfer volume in USD
+  holderCount             Int? // Total unique holders
+
+  // Whale tracking
+  top10HolderPercent   Float? // % held by top 10 wallets
+  whaleTransactions24h Int? // Large transactions in 24h
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  tokenHeader TokenHeader? @relation(fields: [id], references: [id])
+
+  @@unique([chain, contractAddress])
+  @@index([symbol])
+  @@index([chain])
 }
+
+// =============================================================================
+// MAIN TOKEN MODEL (aggregated market data)
+// =============================================================================
 
 model Token {
-  id                    String        @id @default(uuid())
-  name                  String
-  symbol                String        @unique
-  category              String
-  price                 Float?
-  marketCap             Float?
-  volume24h             Float?
-  priceChange24h        Float?
-  transferVolume24h     Float?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  histories             TokenHistory[]
-  exchanges             TokenExchange[]
-  liquidityScore        Float?
-  pumpDumpRiskScore     Float?
-  walletDistributionScore Float?
-  contractAddress       String?       // From TokenHeader.platforms
-  platform              String?       // e.g., "solana", "ethereum"
-  exchange              String?       // Comma-separated exchanges (e.g., "binance,bybit,mexc,htx,gate")
+  id          String  @id @default(uuid())
+  coingeckoId String? @unique
+  name        String
+  symbol      String
+
+  // Multi-chain support
+  chain           String  @default("solana") // solana, ethereum, bsc, base, arbitrum
+  contractAddress String?
+
+  // Market data (from CoinGecko/Birdeye)
+  price          Float?
+  marketCap      Float?
+  fdv            Float? // Fully Diluted Valuation
+  volume24h      Float?
+  priceChange24h Float?
+  priceChange7d  Float?
+
+  // Supply metrics
+  totalSupply       Float?
+  circulatingSupply Float?
+  maxSupply         Float?
+
+  // Your analytics scores (DIFFERENTIATOR)
+  liquidityScore          Float? // 0-100, from DEX data
+  pumpDumpRiskScore       Float? // 0-100, your algorithm
+  walletDistributionScore Float? // 0-100, from on-chain
+
+  // Derived metrics
+  volumeMarketCapRatio Float? // volume24h / marketCap
+  transferVolume24h    Float? // On-chain transfer volume
+
+  // Categorization
+  category String  @default("altcoin") // memecoin, defi, altcoin, etc.
+  exchange String? // Comma-separated CEX listings
+
+  // Data freshness tracking
+  lastPriceUpdate DateTime? // When price was last updated
+  dataSource      String? // Which API provided the data
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  histories TokenHistory[]
+  exchanges TokenExchange[]
+  alerts    Alert[]
+
+  @@unique([chain, contractAddress])
   @@index([symbol])
-  @@index([exchange])
+  @@index([chain])
+  @@index([category])
+  @@index([coingeckoId])
 }
+
+// =============================================================================
+// HISTORICAL DATA (for charts and analysis)
+// =============================================================================
 
 model TokenHistory {
-  id          String   @id @default(uuid())
-  tokenId     String
-  price       Float?
-  marketCap   Float?
-  volume24h   Float?
-  timestamp   DateTime @default(now())
-  token       Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
-  @@index([tokenId, timestamp])
+  id       String @id @default(uuid())
+  tokenId  String
+  interval String @default("1h") // 1m, 5m, 15m, 1h, 4h, 1d
+
+  // OHLCV data
+  open   Float?
+  high   Float?
+  low    Float?
+  close  Float?
+  volume Float?
+
+  // Legacy fields (for backward compatibility)
+  price     Float?
+  marketCap Float?
+  volume24h Float?
+
+  timestamp DateTime @default(now())
+  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenId, interval, timestamp])
+  @@index([tokenId, interval, timestamp])
 }
 
+// =============================================================================
+// EXCHANGE DATA (per-exchange pricing for arbitrage)
+// =============================================================================
+
 model TokenExchange {
-  id          Int      @id @default(autoincrement())
-  tokenId     String
-  exchange    String   // e.g., "binance", "bybit", "mexc", "htx", "gate"
-  symbol      String
-  lastPrice   Float?
-  volume      Float?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  token       Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  tokenId   String
+  exchange  String // binance, bybit, mexc, htx, gate, okx
+  symbol    String // Trading pair symbol
+  lastPrice Float?
+  volume    Float?
+  bid       Float? // Best bid price
+  ask       Float? // Best ask price
+  spread    Float? // Bid-ask spread %
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
   @@unique([tokenId, exchange])
   @@index([symbol])
   @@index([exchange])
+}
+
+// =============================================================================
+// CHAIN CONFIGURATION
+// =============================================================================
+
+model Chain {
+  id            String  @id // solana, ethereum, bsc, base, arbitrum, polygon
+  name          String // Display name: "Solana", "Ethereum", etc.
+  nativeToken   String // SOL, ETH, BNB, etc.
+  rpcUrl        String? // Primary RPC endpoint
+  explorerUrl   String? // Block explorer URL
+  dexScreenerId String? // DEXScreener chain ID
+  isActive      Boolean @default(true)
+  priority      Int     @default(0) // Display order
+
+  @@map("chains")
+}
+
+// =============================================================================
+// USER ALERTS (for SaaS subscription features)
+// =============================================================================
+
+model Alert {
+  id      String @id @default(uuid())
+  userId  String // Will link to User model when auth is added
+  tokenId String
+
+  // Alert configuration
+  alertType String // price_above, price_below, volume_spike, whale_move, new_listing
+  threshold Float // Trigger value
+
+  // Notification preferences
+  channels String[] // ["email", "telegram", "discord", "push"]
+
+  // State
+  isActive     Boolean   @default(true)
+  triggeredAt  DateTime?
+  triggerCount Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  token     Token    @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([tokenId])
+  @@index([alertType])
+}
+
+// =============================================================================
+// DATA SOURCE HEALTH (for monitoring your data pipeline)
+// =============================================================================
+
+model DataSourceHealth {
+  id           String    @id // coingecko, birdeye, helius, moralis
+  name         String
+  status       String    @default("healthy") // healthy, degraded, down
+  lastCheck    DateTime  @default(now())
+  lastSuccess  DateTime?
+  failureCount Int       @default(0)
+  avgLatencyMs Int?
+  errorMessage String?
+
+  @@map("data_source_health")
 }
