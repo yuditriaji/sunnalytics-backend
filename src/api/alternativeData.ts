@@ -4,8 +4,8 @@ import { logger } from '../services/logger';
 // CoinPaprika API - Unlimited free tier, no API key needed
 const COINPAPRIKA_BASE = 'https://api.coinpaprika.com/v1';
 
-// CoinCap API - 200 req/min, no API key needed
-const COINCAP_BASE = 'https://api.coincap.io/v2';
+// CoinLore API - Free, no API key needed, reliable
+const COINLORE_BASE = 'https://api.coinlore.net/api';
 
 export interface TokenInfo {
     id: string;
@@ -54,58 +54,72 @@ export async function fetchTokenList(): Promise<TokenInfo[]> {
 }
 
 /**
- * Fetch market data from CoinCap (200 req/min, no key)
+ * Fetch market data from CoinLore (free, no key, reliable)
  */
 export async function fetchMarketDataBatch(limit = 2000): Promise<MarketData[]> {
     try {
-        const response = await axios.get(`${COINCAP_BASE}/assets`, {
-            params: { limit },
-            timeout: 30000,
-        });
+        // CoinLore returns max 100 per request, so we paginate
+        const allData: MarketData[] = [];
+        const perPage = 100;
+        const pages = Math.ceil(limit / perPage);
 
-        const assets = response.data.data || [];
-        const marketData = assets.map((asset: any) => ({
-            id: asset.id,
-            symbol: asset.symbol.toLowerCase(),
-            name: asset.name,
-            price: parseFloat(asset.priceUsd) || 0,
-            marketCap: parseFloat(asset.marketCapUsd) || 0,
-            volume24h: parseFloat(asset.volumeUsd24Hr) || 0,
-            priceChange24h: parseFloat(asset.changePercent24Hr) || 0,
-        }));
+        for (let page = 0; page < pages && allData.length < limit; page++) {
+            const response = await axios.get(`${COINLORE_BASE}/tickers/`, {
+                params: { start: page * perPage, limit: perPage },
+                timeout: 30000,
+            });
 
-        logger.info(`Fetched ${marketData.length} market data from CoinCap`);
-        return marketData;
+            const assets = response.data.data || [];
+            const marketData = assets.map((asset: any) => ({
+                id: asset.nameid || asset.id,
+                symbol: asset.symbol.toLowerCase(),
+                name: asset.name,
+                price: parseFloat(asset.price_usd) || 0,
+                marketCap: parseFloat(asset.market_cap_usd) || 0,
+                volume24h: parseFloat(asset.volume24) || 0,
+                priceChange24h: parseFloat(asset.percent_change_24h) || 0,
+            }));
+
+            allData.push(...marketData);
+
+            // Small delay to be nice to the API
+            if (page < pages - 1) await new Promise(r => setTimeout(r, 100));
+        }
+
+        logger.info(`Fetched ${allData.length} market data from CoinLore`);
+        return allData.slice(0, limit);
     } catch (error: any) {
-        logger.error(`CoinCap market data failed: ${error.message}`);
+        logger.error(`CoinLore market data failed: ${error.message}`);
         throw error;
     }
 }
 
 /**
- * Fetch single token market data from CoinCap
+ * Fetch single token market data from CoinLore
  */
 export async function fetchTokenPrice(symbol: string): Promise<MarketData | null> {
     try {
-        const response = await axios.get(`${COINCAP_BASE}/assets`, {
-            params: { search: symbol, limit: 1 },
+        // CoinLore doesn't have search, so fetch all and find
+        const response = await axios.get(`${COINLORE_BASE}/tickers/`, {
+            params: { limit: 100 },
             timeout: 10000,
         });
 
-        const asset = response.data.data?.[0];
+        const assets = response.data.data || [];
+        const asset = assets.find((a: any) => a.symbol.toLowerCase() === symbol.toLowerCase());
         if (!asset) return null;
 
         return {
-            id: asset.id,
+            id: asset.nameid || asset.id,
             symbol: asset.symbol.toLowerCase(),
             name: asset.name,
-            price: parseFloat(asset.priceUsd) || 0,
-            marketCap: parseFloat(asset.marketCapUsd) || 0,
-            volume24h: parseFloat(asset.volumeUsd24Hr) || 0,
-            priceChange24h: parseFloat(asset.changePercent24Hr) || 0,
+            price: parseFloat(asset.price_usd) || 0,
+            marketCap: parseFloat(asset.market_cap_usd) || 0,
+            volume24h: parseFloat(asset.volume24) || 0,
+            priceChange24h: parseFloat(asset.percent_change_24h) || 0,
         };
     } catch (error: any) {
-        logger.error(`CoinCap price fetch failed for ${symbol}: ${error.message}`);
+        logger.error(`CoinLore price fetch failed for ${symbol}: ${error.message}`);
         return null;
     }
 }
