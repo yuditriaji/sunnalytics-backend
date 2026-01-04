@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { requireAuth, requireTier } from '../middleware/auth';
-import { isValidSolanaAddress, syncWallet, syncUserWallets } from '../services/solanaSync';
+import { isValidSolanaAddress, syncWallet as syncSolanaWallet, syncUserWallets } from '../services/solanaSync';
+import { isValidEvmAddress, syncEvmWallet } from '../services/evmSync';
 import { logger } from '../services/logger';
 
 const router = Router();
@@ -17,10 +18,30 @@ const WALLET_LIMITS = {
 
 // Validation schemas
 const AddWalletSchema = z.object({
-    address: z.string().min(32).max(44),
+    address: z.string().min(32).max(66), // Extended for EVM addresses (0x + 40 hex)
     chain: z.enum(['solana', 'ethereum', 'bsc', 'base', 'arbitrum']).default('solana'),
     label: z.string().max(50).optional(),
 });
+
+// EVM chains list
+const EVM_CHAINS = ['ethereum', 'bsc', 'base', 'arbitrum'];
+
+// Smart sync routing based on chain
+async function syncWallet(walletId: string, chain: string): Promise<void> {
+    if (EVM_CHAINS.includes(chain)) {
+        await syncEvmWallet(walletId);
+    } else {
+        await syncSolanaWallet(walletId);
+    }
+}
+
+// Validate address based on chain
+function isValidAddress(address: string, chain: string): boolean {
+    if (EVM_CHAINS.includes(chain)) {
+        return isValidEvmAddress(address);
+    }
+    return isValidSolanaAddress(address);
+}
 
 // =============================================================================
 // GET /api/wallets - List user's connected wallets
@@ -77,9 +98,9 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
         const { address, chain, label } = validation.data;
 
-        // Validate Solana address format
-        if (chain === 'solana' && !isValidSolanaAddress(address)) {
-            return res.status(400).json({ error: 'Invalid Solana address format' });
+        // Validate address format based on chain
+        if (!isValidAddress(address, chain)) {
+            return res.status(400).json({ error: `Invalid ${chain} address format` });
         }
 
         // Check tier limits
@@ -117,8 +138,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
             },
         });
 
-        // Trigger initial sync (async)
-        syncWallet(wallet.id).catch((err) => {
+        // Trigger initial sync (async) with smart routing
+        syncWallet(wallet.id, chain).catch((err) => {
             logger.error(`Initial sync failed for wallet ${wallet.id}: ${err.message}`);
         });
 
@@ -160,8 +181,8 @@ router.post('/:id/sync', requireAuth, async (req: Request, res: Response) => {
             }
         }
 
-        // Trigger sync
-        await syncWallet(id);
+        // Trigger sync with smart routing
+        await syncWallet(id, wallet.chain);
 
         // Fetch updated wallet
         const updated = await prisma.walletConnection.findUnique({
