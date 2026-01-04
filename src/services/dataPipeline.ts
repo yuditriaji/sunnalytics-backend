@@ -145,14 +145,14 @@ class ComprehensiveDataPipeline {
                     update: {
                       symbol: token.symbol.toLowerCase(),
                       name: token.name,
-                      platforms: token.platforms || {},
+                      platforms: token.chains || {},
                       updatedAt: new Date()
                     },
                     create: {
                       id: token.id,
                       symbol: token.symbol.toLowerCase(),
                       name: token.name,
-                      platforms: token.platforms || {},
+                      platforms: token.chains || {},
                       exchange: null,
                       createdAt: new Date(),
                       updatedAt: new Date()
@@ -327,7 +327,7 @@ class ComprehensiveDataPipeline {
                   volume24h: sanitizedData.volume24h,
                   priceChange24h: sanitizedData.priceChange24h,
                   contractAddress: sanitizedData.contractAddress,
-                  platform: sanitizedData.platform,
+                  chain: sanitizedData.platform,
                   exchange: sanitizedData.exchange,
                   updatedAt: new Date()
                 },
@@ -340,7 +340,7 @@ class ComprehensiveDataPipeline {
                   volume24h: sanitizedData.volume24h,
                   priceChange24h: sanitizedData.priceChange24h,
                   contractAddress: sanitizedData.contractAddress,
-                  platform: sanitizedData.platform,
+                  chain: sanitizedData.platform,
                   exchange: sanitizedData.exchange,
                   createdAt: new Date(),
                   updatedAt: new Date()
@@ -430,7 +430,7 @@ class ComprehensiveDataPipeline {
                 data: {
                   transferVolume24h: token.transferAmount,
                   contractAddress: token.address,
-                  platform: 'solana',
+                  chain: 'solana',
                   updatedAt: new Date()
                 }
               });
@@ -460,16 +460,16 @@ class ComprehensiveDataPipeline {
       where: {
         AND: [
           { contractAddress: { not: null } },
-          { platform: { not: null } }
+          { chain: { not: null } }
         ]
       },
-      select: { id: true, symbol: true, contractAddress: true, platform: true },
+      select: { id: true, symbol: true, contractAddress: true, chain: true },
       take: 100 // Limit for rate limiting
     });
 
     for (const token of tokensWithContracts) {
       try {
-        if (!token.contractAddress || !token.platform) continue;
+        if (!token.contractAddress || !token.chain) continue;
 
         // Find corresponding header
         const header = await prisma.tokenHeader.findFirst({
@@ -484,7 +484,7 @@ class ComprehensiveDataPipeline {
           header.id,
           token.symbol,
           token.contractAddress,
-          token.platform
+          token.chain
         );
 
         if (onChainData) {
@@ -493,7 +493,7 @@ class ComprehensiveDataPipeline {
             where: { id: header.id },
             update: {
               symbol: token.symbol,
-              platform: token.platform,
+              chain: token.chain,
               contractAddress: token.contractAddress,
               walletDistributionScore: onChainData.walletDistributionScore,
               poolLiquidity: onChainData.poolLiquidity,
@@ -504,7 +504,7 @@ class ComprehensiveDataPipeline {
             create: {
               id: header.id,
               symbol: token.symbol,
-              platform: token.platform,
+              chain: token.chain,
               contractAddress: token.contractAddress,
               walletDistributionScore: onChainData.walletDistributionScore,
               poolLiquidity: onChainData.poolLiquidity,
@@ -519,7 +519,7 @@ class ComprehensiveDataPipeline {
           const metrics = await calculateTokenMetrics({
             coingeckoId: header.id,
             contractAddress: token.contractAddress,
-            platform: token.platform
+            platform: token.chain // TokenInput uses 'platform', schema uses 'chain'
           });
 
           await prisma.token.update({
