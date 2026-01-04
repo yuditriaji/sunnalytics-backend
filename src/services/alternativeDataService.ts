@@ -101,28 +101,40 @@ export async function updateTokenPricesFromCoinCap(): Promise<{ success: number,
             if (!header) continue; // Skip if no matching header
 
             try {
-                await prisma.token.upsert({
-                    where: { symbol: data.symbol.toLowerCase() },
-                    update: {
-                        name: data.name,
-                        price: data.price,
-                        marketCap: data.marketCap,
-                        volume24h: data.volume24h,
-                        priceChange24h: data.priceChange24h,
-                        updatedAt: new Date()
-                    },
-                    create: {
-                        symbol: data.symbol.toLowerCase(),
-                        name: data.name,
-                        category: 'altcoin',
-                        price: data.price,
-                        marketCap: data.marketCap,
-                        volume24h: data.volume24h,
-                        priceChange24h: data.priceChange24h,
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    }
+                // Check if token already exists (symbol is not unique, so find first)
+                const existingToken = await prisma.token.findFirst({
+                    where: { symbol: data.symbol.toLowerCase() }
                 });
+
+                if (existingToken) {
+                    // Update existing token
+                    await prisma.token.update({
+                        where: { id: existingToken.id },
+                        data: {
+                            name: data.name,
+                            price: data.price,
+                            marketCap: data.marketCap,
+                            volume24h: data.volume24h,
+                            priceChange24h: data.priceChange24h,
+                            updatedAt: new Date()
+                        }
+                    });
+                } else {
+                    // Create new token
+                    await prisma.token.create({
+                        data: {
+                            symbol: data.symbol.toLowerCase(),
+                            name: data.name,
+                            category: 'altcoin',
+                            price: data.price,
+                            marketCap: data.marketCap,
+                            volume24h: data.volume24h,
+                            priceChange24h: data.priceChange24h,
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }
+                    });
+                }
 
                 result.success++;
 

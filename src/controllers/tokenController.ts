@@ -128,7 +128,7 @@ export async function refreshTokensAlternative(req: Request, res: Response) {
           errors: headerResult.errors.length
         },
         marketData: {
-          source: 'CoinCap',
+          source: 'CoinLore',
           success: priceResult.success,
           errors: priceResult.errors.length
         }
