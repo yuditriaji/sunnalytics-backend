@@ -25,6 +25,13 @@ export interface MarketData {
     priceChange24h: number;
 }
 
+export interface ContractInfo {
+    symbol: string;
+    chain: string;
+    contractAddress: string;
+    type?: string;
+}
+
 /**
  * Fetch token list from CoinPaprika (unlimited, no key)
  */
@@ -158,9 +165,67 @@ export async function fetchTokenDetails(tokenId: string): Promise<any | null> {
     }
 }
 
+// Chain name mapping from CoinPaprika to our schema
+const CHAIN_MAPPING: Record<string, string> = {
+    'eth-ethereum': 'ethereum',
+    'sol-solana': 'solana',
+    'bnb-bnb': 'bsc',
+    'arb-arbitrum': 'arbitrum',
+    'base-base': 'base',
+    'matic-polygon': 'polygon',
+    'avax-avalanche': 'avalanche',
+    'op-optimism': 'optimism',
+    'trx-tron': 'tron',
+};
+
+/**
+ * Fetch contract addresses for a token from CoinPaprika
+ */
+export async function fetchContractAddresses(coinId: string): Promise<ContractInfo[]> {
+    try {
+        const response = await axios.get(`${COINPAPRIKA_BASE}/coins/${coinId}`, {
+            timeout: 10000,
+        });
+
+        const coin = response.data;
+        const contracts: ContractInfo[] = [];
+
+        if (coin.contracts && Array.isArray(coin.contracts)) {
+            for (const contract of coin.contracts) {
+                const chain = CHAIN_MAPPING[contract.platform] || contract.platform;
+
+                // Only include chains we support
+                if (['ethereum', 'solana', 'bsc', 'arbitrum', 'base', 'polygon'].includes(chain)) {
+                    contracts.push({
+                        symbol: coin.symbol.toLowerCase(),
+                        chain,
+                        contractAddress: contract.contract,
+                        type: contract.type,
+                    });
+                }
+            }
+        }
+
+        return contracts;
+    } catch (error: any) {
+        // Don't log error for each token - just return empty
+        return [];
+    }
+}
+
+/**
+ * Map of symbol to CoinPaprika coin ID
+ */
+export async function getSymbolToIdMap(): Promise<Map<string, string>> {
+    const coins = await fetchTokenList();
+    return new Map(coins.map(c => [c.symbol.toLowerCase(), c.id]));
+}
+
 export default {
     fetchTokenList,
     fetchMarketDataBatch,
     fetchTokenPrice,
     fetchTokenDetails,
+    fetchContractAddresses,
+    getSymbolToIdMap,
 };

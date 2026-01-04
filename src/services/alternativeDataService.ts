@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from './logger';
-import { fetchTokenList, fetchMarketDataBatch } from '../api/alternativeData';
+import { fetchTokenList, fetchMarketDataBatch, fetchContractAddresses, getSymbolToIdMap } from '../api/alternativeData';
 import { fetchAllExchangeTokens, ExchangeToken } from '../api/exchangeTokens';
 
 const prisma = new PrismaClient() as any;
@@ -257,8 +257,80 @@ export async function syncExchangeListedTokens(minExchanges = 1): Promise<{ succ
     return result;
 }
 
+/**
+ * Populate contract addresses for existing tokens
+ * Fetches from CoinPaprika and updates Token records
+ */
+export async function populateContractAddresses(): Promise<{ success: number, errors: string[] }> {
+    const result = { success: 0, errors: [] as string[] };
+
+    try {
+        logger.info('📍 Populating contract addresses from CoinPaprika...');
+
+        // Get symbol to CoinPaprika ID mapping
+        const symbolToId = await getSymbolToIdMap();
+
+        // Get all tokens without contract address
+        const tokens = await prisma.token.findMany({
+            where: { contractAddress: null },
+            select: { id: true, symbol: true }
+        });
+
+        logger.info(`Found ${tokens.length} tokens without contract addresses`);
+
+        let processed = 0;
+        for (const token of tokens) {
+            const coinId = symbolToId.get(token.symbol.toLowerCase());
+            if (!coinId) continue;
+
+            try {
+                const contracts = await fetchContractAddresses(coinId);
+
+                if (contracts.length > 0) {
+                    // Prefer Ethereum, then Solana, then others
+                    const preferred = contracts.find(c => c.chain === 'ethereum')
+                        || contracts.find(c => c.chain === 'solana')
+                        || contracts[0];
+
+                    await prisma.token.update({
+                        where: { id: token.id },
+                        data: {
+                            chain: preferred.chain,
+                            contractAddress: preferred.contractAddress,
+                            updatedAt: new Date()
+                        }
+                    });
+
+                    result.success++;
+                }
+
+                processed++;
+                if (processed % 50 === 0) {
+                    logger.info(`Progress: ${processed}/${tokens.length} tokens processed, ${result.success} updated`);
+                    // Small delay to avoid rate limiting
+                    await new Promise(r => setTimeout(r, 100));
+                }
+
+            } catch (error: any) {
+                result.errors.push(`Token ${token.symbol}: ${error.message}`);
+            }
+        }
+
+        logger.info(`✅ Contract addresses populated: ${result.success} updated`);
+
+    } catch (error: any) {
+        logger.error(`Contract population failed: ${error.message}`);
+        result.errors.push(error.message);
+    } finally {
+        await prisma.$disconnect();
+    }
+
+    return result;
+}
+
 export default {
     populateTokenHeadersFromCoinPaprika,
     updateTokenPricesFromCoinCap,
-    syncExchangeListedTokens
+    syncExchangeListedTokens,
+    populateContractAddresses
 };

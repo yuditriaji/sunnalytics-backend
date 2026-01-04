@@ -6,7 +6,7 @@ import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 import { withDatabase } from '../services/database';
-import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens } from '../services/alternativeDataService';
+import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens, populateContractAddresses } from '../services/alternativeDataService';
 import axios from 'axios';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
@@ -179,6 +179,40 @@ export async function refreshExchangeTokens(req: Request, res: Response) {
     logger.error(`Exchange token sync failed: ${error.message}`);
     res.status(500).json({
       error: 'Exchange token sync failed',
+      message: error.message,
+      status: 'failed'
+    });
+  }
+}
+
+/**
+ * Populate contract addresses for tokens
+ * Fetches from CoinPaprika
+ */
+export async function refreshContractAddresses(req: Request, res: Response) {
+  try {
+    logger.info('📍 Populating contract addresses...');
+
+    const startTime = Date.now();
+
+    const result = await populateContractAddresses();
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+
+    res.json({
+      message: 'Contract addresses populated successfully',
+      status: 'success',
+      duration: `${duration}s`,
+      result: {
+        updated: result.success,
+        errors: result.errors.length
+      }
+    });
+
+  } catch (error: any) {
+    logger.error(`Contract address population failed: ${error.message}`);
+    res.status(500).json({
+      error: 'Contract address population failed',
       message: error.message,
       status: 'failed'
     });
