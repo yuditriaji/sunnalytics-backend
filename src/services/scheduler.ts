@@ -3,7 +3,8 @@ import { logger } from './logger';
 import {
     syncExchangeListedTokens,
     populateContractAddresses,
-    populateOnChainAnalytics
+    populateOnChainAnalytics,
+    recordPriceHistory
 } from './alternativeDataService';
 
 /**
@@ -14,7 +15,8 @@ import {
 let isRunning = {
     exchangeTokens: false,
     contractAddresses: false,
-    onChainAnalytics: false
+    onChainAnalytics: false,
+    priceHistory: false
 };
 
 /**
@@ -84,6 +86,28 @@ async function refreshOnChainAnalyticsJob() {
 }
 
 /**
+ * Record price history for charts
+ * Runs every hour (on the hour)
+ */
+async function recordPriceHistoryJob() {
+    if (isRunning.priceHistory) {
+        logger.info('⏭️ Skipping price history job - already running');
+        return;
+    }
+
+    isRunning.priceHistory = true;
+    try {
+        logger.info('🔄 [CRON] Starting price history recording...');
+        const result = await recordPriceHistory();
+        logger.info(`✅ [CRON] Price history recorded: ${result.success} entries, ${result.errors.length} errors`);
+    } catch (error: any) {
+        logger.error(`❌ [CRON] Price history recording failed: ${error.message}`);
+    } finally {
+        isRunning.priceHistory = false;
+    }
+}
+
+/**
  * Initialize all scheduled jobs
  */
 export function initScheduler() {
@@ -102,11 +126,17 @@ export function initScheduler() {
     });
     logger.info('   ⏰ Contract addresses: every 6 hours');
 
-    // Refresh on-chain analytics every hour
+    // Refresh on-chain analytics every hour at :30
     cron.schedule('30 * * * *', refreshOnChainAnalyticsJob, {
         timezone: 'UTC'
     });
     logger.info('   ⏰ On-chain analytics: every hour (at :30)');
+
+    // Record price history every hour on the hour
+    cron.schedule('0 * * * *', recordPriceHistoryJob, {
+        timezone: 'UTC'
+    });
+    logger.info('   ⏰ Price history: every hour (on the hour)');
 
     logger.info('✅ Scheduler initialized successfully');
 }
@@ -128,6 +158,10 @@ export function getSchedulerStatus() {
             onChainAnalytics: {
                 schedule: 'every hour at :30',
                 isRunning: isRunning.onChainAnalytics
+            },
+            priceHistory: {
+                schedule: 'every hour on the hour',
+                isRunning: isRunning.priceHistory
             }
         }
     };

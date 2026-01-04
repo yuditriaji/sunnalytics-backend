@@ -399,10 +399,93 @@ export async function populateOnChainAnalytics(): Promise<{ success: number, err
     return result;
 }
 
+/**
+ * Record current prices to history for charting
+ * Creates hourly snapshots of token prices
+ */
+export async function recordPriceHistory(): Promise<{ success: number, errors: string[] }> {
+    const result = { success: 0, errors: [] as string[] };
+
+    try {
+        logger.info('📊 Recording price history...');
+
+        // Get top 100 tokens by market cap
+        const tokens = await prisma.token.findMany({
+            where: {
+                price: { not: null },
+                marketCap: { gt: 0 }
+            },
+            orderBy: { marketCap: 'desc' },
+            take: 100,
+            select: {
+                id: true,
+                symbol: true,
+                price: true,
+                marketCap: true,
+                volume24h: true
+            }
+        });
+
+        logger.info(`Recording history for ${tokens.length} tokens`);
+
+        const now = new Date();
+        // Round to nearest hour
+        now.setMinutes(0, 0, 0);
+
+        for (const token of tokens) {
+            try {
+                await prisma.tokenHistory.upsert({
+                    where: {
+                        tokenId_interval_timestamp: {
+                            tokenId: token.id,
+                            interval: '1h',
+                            timestamp: now
+                        }
+                    },
+                    update: {
+                        price: token.price,
+                        close: token.price,
+                        marketCap: token.marketCap,
+                        volume24h: token.volume24h
+                    },
+                    create: {
+                        tokenId: token.id,
+                        interval: '1h',
+                        timestamp: now,
+                        open: token.price,
+                        high: token.price,
+                        low: token.price,
+                        close: token.price,
+                        price: token.price,
+                        marketCap: token.marketCap,
+                        volume24h: token.volume24h
+                    }
+                });
+
+                result.success++;
+
+            } catch (error: any) {
+                result.errors.push(`Token ${token.symbol}: ${error.message}`);
+            }
+        }
+
+        logger.info(`✅ Price history recorded: ${result.success} entries`);
+
+    } catch (error: any) {
+        logger.error(`Price history recording failed: ${error.message}`);
+        result.errors.push(error.message);
+    } finally {
+        await prisma.$disconnect();
+    }
+
+    return result;
+}
+
 export default {
     populateTokenHeadersFromCoinPaprika,
     updateTokenPricesFromCoinCap,
     syncExchangeListedTokens,
     populateContractAddresses,
-    populateOnChainAnalytics
+    populateOnChainAnalytics,
+    recordPriceHistory
 };
