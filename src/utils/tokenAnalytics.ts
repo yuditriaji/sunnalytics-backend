@@ -5,7 +5,10 @@ import { cache } from '../services/cache';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { fetchHistoricalVolume } from '../api/onchain';
 
-const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+// Use Helius RPC when available for better rate limits
+const SOLANA_RPC = process.env.HELIUS_API_KEY
+  ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+  : (process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
 const ETHERSCAN_API = 'https://api.etherscan.io/api';
 
 export interface TokenMetrics {

@@ -5,7 +5,10 @@ import { logger } from '../services/logger';
 import { cache } from '../services/cache';
 
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
-const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+// Use Helius RPC when available for better rate limits
+const SOLANA_RPC = process.env.HELIUS_API_KEY
+  ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+  : (process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
 
 export interface BitqueryToken {
   address: string;
