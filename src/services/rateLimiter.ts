@@ -50,14 +50,18 @@ class SmartRateLimiter {
     });
 
     // Bitquery/Solana RPC configuration
+    // Helius allows 100+ req/sec, public RPC is ~10-15/min
+    const hasHelius = !!process.env.HELIUS_API_KEY;
     this.endpoints.set('solana', {
       name: 'Solana RPC',
-      baseUrl: process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com',
+      baseUrl: hasHelius
+        ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+        : (process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'),
       config: {
-        maxRequestsPerMinute: 30,
-        maxRequestsPerHour: 1000,
-        baseDelay: 2000, // 2 seconds
-        maxDelay: 30000,
+        maxRequestsPerMinute: hasHelius ? 300 : 10, // Helius is much faster
+        maxRequestsPerHour: hasHelius ? 10000 : 300,
+        baseDelay: hasHelius ? 200 : 6000, // 0.2s for Helius, 6s for public
+        maxDelay: hasHelius ? 5000 : 60000,
         backoffMultiplier: 1.3,
         circuitBreakerThreshold: 5,
         circuitBreakerTimeout: 180000 // 3 minutes
