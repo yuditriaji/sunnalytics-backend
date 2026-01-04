@@ -6,6 +6,9 @@ import { logger } from './logger';
 const prisma = new PrismaClient() as any;
 
 // EVM Chain Configuration
+// Note: Etherscan operates all these explorers - unified API key works across all
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
+
 const EVM_CHAINS = {
     ethereum: {
         name: 'Ethereum',
@@ -23,7 +26,7 @@ const EVM_CHAINS = {
         nativeSymbol: 'ETH',
         nativeDecimals: 18,
         explorerApi: 'https://api.basescan.org/api',
-        apiKey: process.env.BASESCAN_API_KEY || '',
+        apiKey: ETHERSCAN_API_KEY, // Unified Etherscan API
     },
     arbitrum: {
         name: 'Arbitrum',
@@ -32,7 +35,7 @@ const EVM_CHAINS = {
         nativeSymbol: 'ETH',
         nativeDecimals: 18,
         explorerApi: 'https://api.arbiscan.io/api',
-        apiKey: process.env.ARBISCAN_API_KEY || '',
+        apiKey: ETHERSCAN_API_KEY, // Unified Etherscan API
     },
     bsc: {
         name: 'BNB Chain',
@@ -41,7 +44,7 @@ const EVM_CHAINS = {
         nativeSymbol: 'BNB',
         nativeDecimals: 18,
         explorerApi: 'https://api.bscscan.com/api',
-        apiKey: process.env.BSCSCAN_API_KEY || '',
+        apiKey: ETHERSCAN_API_KEY, // Unified Etherscan API
     },
 };
 
