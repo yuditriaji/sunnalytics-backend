@@ -71,7 +71,8 @@ export async function populateTokenHeadersFromCoinPaprika(): Promise<{ success: 
 }
 
 /**
- * Update token prices using CoinCap (no rate limits)
+ * Create/Update tokens with prices from CoinCap (no rate limits)
+ * This creates Token records if they don't exist
  */
 export async function updateTokenPricesFromCoinCap(): Promise<{ success: number, errors: string[] }> {
     const result = { success: 0, errors: [] as string[] };
@@ -81,44 +82,64 @@ export async function updateTokenPricesFromCoinCap(): Promise<{ success: number,
 
         // Fetch market data
         const marketData = await fetchMarketDataBatch(2000);
-        const priceMap = new Map(
-            marketData.map(d => [d.symbol.toLowerCase(), d])
-        );
+        logger.info(`Fetched ${marketData.length} tokens with prices from CoinCap`);
 
-        // Get all tokens
-        const tokens = await prisma.token.findMany({
-            select: { id: true, symbol: true }
+        // Get existing token headers to match symbols
+        const tokenHeaders = await prisma.tokenHeader.findMany({
+            select: { id: true, symbol: true, name: true }
         });
 
-        logger.info(`Updating prices for ${tokens.length} tokens...`);
+        const headerBySymbol = new Map(
+            tokenHeaders.map((h: any) => [h.symbol.toLowerCase(), h])
+        );
 
-        for (const token of tokens) {
-            const data = priceMap.get(token.symbol.toLowerCase());
-            if (!data) continue;
+        logger.info(`Found ${tokenHeaders.length} token headers to match`);
+
+        // Create/update tokens with market data
+        for (const data of marketData) {
+            const header = headerBySymbol.get(data.symbol.toLowerCase());
+            if (!header) continue; // Skip if no matching header
 
             try {
-                await prisma.token.update({
-                    where: { id: token.id },
-                    data: {
+                await prisma.token.upsert({
+                    where: { symbol: data.symbol.toLowerCase() },
+                    update: {
+                        name: data.name,
                         price: data.price,
                         marketCap: data.marketCap,
                         volume24h: data.volume24h,
                         priceChange24h: data.priceChange24h,
+                        updatedAt: new Date()
+                    },
+                    create: {
+                        symbol: data.symbol.toLowerCase(),
+                        name: data.name,
+                        category: 'altcoin',
+                        price: data.price,
+                        marketCap: data.marketCap,
+                        volume24h: data.volume24h,
+                        priceChange24h: data.priceChange24h,
+                        createdAt: new Date(),
                         updatedAt: new Date()
                     }
                 });
 
                 result.success++;
 
+                // Log progress every 500 tokens
+                if (result.success % 500 === 0) {
+                    logger.info(`Progress: ${result.success} tokens processed`);
+                }
+
             } catch (error: any) {
-                result.errors.push(`Token ${token.symbol}: ${error.message}`);
+                result.errors.push(`Token ${data.symbol}: ${error.message}`);
             }
         }
 
-        logger.info(`✅ Token prices updated: ${result.success} successful`);
+        logger.info(`✅ Tokens created/updated: ${result.success} successful`);
 
     } catch (error: any) {
-        logger.error(`Price update failed: ${error.message}`);
+        logger.error(`Token creation failed: ${error.message}`);
         result.errors.push(error.message);
     } finally {
         await prisma.$disconnect();
