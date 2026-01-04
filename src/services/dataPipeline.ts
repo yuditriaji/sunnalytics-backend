@@ -145,14 +145,14 @@ class ComprehensiveDataPipeline {
                     update: {
                       symbol: token.symbol.toLowerCase(),
                       name: token.name,
-                      platforms: token.chains || {},
+                      platforms: token.platforms || {},
                       updatedAt: new Date()
                     },
                     create: {
                       id: token.id,
                       symbol: token.symbol.toLowerCase(),
                       name: token.name,
-                      platforms: token.chains || {},
+                      platforms: token.platforms || {},
                       exchange: null,
                       createdAt: new Date(),
                       updatedAt: new Date()
