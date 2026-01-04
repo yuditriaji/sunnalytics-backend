@@ -6,7 +6,7 @@ import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 import { withDatabase } from '../services/database';
-import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens, populateContractAddresses } from '../services/alternativeDataService';
+import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens, populateContractAddresses, populateOnChainAnalytics } from '../services/alternativeDataService';
 import axios from 'axios';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
@@ -213,6 +213,40 @@ export async function refreshContractAddresses(req: Request, res: Response) {
     logger.error(`Contract address population failed: ${error.message}`);
     res.status(500).json({
       error: 'Contract address population failed',
+      message: error.message,
+      status: 'failed'
+    });
+  }
+}
+
+/**
+ * Populate on-chain analytics for tokens with contracts
+ * Fetches liquidity, holder distribution from Birdeye/Etherscan
+ */
+export async function refreshOnChainAnalytics(req: Request, res: Response) {
+  try {
+    logger.info('⛓️ Populating on-chain analytics...');
+
+    const startTime = Date.now();
+
+    const result = await populateOnChainAnalytics();
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+
+    res.json({
+      message: 'On-chain analytics populated successfully',
+      status: 'success',
+      duration: `${duration}s`,
+      result: {
+        updated: result.success,
+        errors: result.errors.length
+      }
+    });
+
+  } catch (error: any) {
+    logger.error(`On-chain analytics failed: ${error.message}`);
+    res.status(500).json({
+      error: 'On-chain analytics failed',
       message: error.message,
       status: 'failed'
     });

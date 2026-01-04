@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { logger } from './logger';
 import { fetchTokenList, fetchMarketDataBatch, fetchContractAddresses, getSymbolToIdMap } from '../api/alternativeData';
 import { fetchAllExchangeTokens, ExchangeToken } from '../api/exchangeTokens';
+import { fetchOnChainData } from '../api/onchain';
 
 const prisma = new PrismaClient() as any;
 
@@ -328,9 +329,80 @@ export async function populateContractAddresses(): Promise<{ success: number, er
     return result;
 }
 
+/**
+ * Populate on-chain analytics for tokens with contract addresses
+ * Fetches liquidity, holder distribution, etc.
+ */
+export async function populateOnChainAnalytics(): Promise<{ success: number, errors: string[] }> {
+    const result = { success: 0, errors: [] as string[] };
+
+    try {
+        logger.info('⛓️ Populating on-chain analytics...');
+
+        // Get tokens with contract addresses
+        const tokens = await prisma.token.findMany({
+            where: {
+                contractAddress: { not: null },
+                chain: { in: ['ethereum', 'solana'] } // Only supported chains
+            },
+            select: {
+                id: true,
+                symbol: true,
+                chain: true,
+                contractAddress: true,
+                coingeckoId: true
+            }
+        });
+
+        logger.info(`Found ${tokens.length} tokens with contract addresses on supported chains`);
+
+        for (const token of tokens) {
+            try {
+                const onChainData = await fetchOnChainData(
+                    token.coingeckoId || '',
+                    token.symbol,
+                    token.contractAddress,
+                    token.chain
+                );
+
+                if (onChainData) {
+                    await prisma.token.update({
+                        where: { id: token.id },
+                        data: {
+                            liquidityScore: onChainData.walletDistributionScore || undefined,
+                            transferVolume24h: onChainData.transferVolume24h || undefined,
+                            updatedAt: new Date()
+                        }
+                    });
+
+                    result.success++;
+                    logger.info(`Updated on-chain data for ${token.symbol}`);
+                }
+
+                // Rate limit delay
+                await new Promise(r => setTimeout(r, 500));
+
+            } catch (error: any) {
+                result.errors.push(`Token ${token.symbol}: ${error.message}`);
+            }
+        }
+
+        logger.info(`✅ On-chain analytics populated: ${result.success} updated`);
+
+    } catch (error: any) {
+        logger.error(`On-chain analytics failed: ${error.message}`);
+        result.errors.push(error.message);
+    } finally {
+        await prisma.$disconnect();
+    }
+
+    return result;
+}
+
 export default {
     populateTokenHeadersFromCoinPaprika,
     updateTokenPricesFromCoinCap,
     syncExchangeListedTokens,
-    populateContractAddresses
+    populateContractAddresses,
+    populateOnChainAnalytics
 };
