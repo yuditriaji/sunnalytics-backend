@@ -378,8 +378,17 @@ export async function getTokens(req: Request, res: Response) {
         walletDistributionScore: token.walletDistributionScore || 0,
         transferVolume24h: token.transferVolume24h || 0,
         isVolumeHealthy: volumeMarketCapRatio > 0.1,
+        // Supply metrics
+        totalSupply: token.totalSupply,
+        circulatingSupply: token.circulatingSupply,
+        maxSupply: token.maxSupply,
+        fdv: token.fdv,
+        // Data source tracking
+        dataSource: token.dataSource,
+        lastPriceUpdate: token.lastPriceUpdate,
         stats: {
           priceChange24h: token.priceChange24h || 0,
+          priceChange7d: token.priceChange7d || 0,
           liquidityScore: token.liquidityScore || 0,
         },
         exchange: token.exchange,
