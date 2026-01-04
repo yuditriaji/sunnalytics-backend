@@ -205,6 +205,11 @@ export async function syncExchangeListedTokens(minExchanges = 1): Promise<{ succ
                     where: { symbol: data.symbol.toLowerCase() }
                 });
 
+                // Calculate FDV (Fully Diluted Valuation)
+                const fdv = data.price && (data.maxSupply || data.totalSupply)
+                    ? data.price * (data.maxSupply || data.totalSupply || 0)
+                    : undefined;
+
                 if (existingToken) {
                     await prisma.token.update({
                         where: { id: existingToken.id },
@@ -214,7 +219,14 @@ export async function syncExchangeListedTokens(minExchanges = 1): Promise<{ succ
                             marketCap: data.marketCap,
                             volume24h: data.volume24h,
                             priceChange24h: data.priceChange24h,
+                            priceChange7d: data.priceChange7d,
+                            fdv: fdv,
+                            totalSupply: data.totalSupply,
+                            circulatingSupply: data.circulatingSupply,
+                            maxSupply: data.maxSupply,
                             exchange: exchangeInfo.exchanges.join(','),
+                            lastPriceUpdate: new Date(),
+                            dataSource: 'coinlore',
                             updatedAt: new Date()
                         }
                     });
@@ -228,7 +240,14 @@ export async function syncExchangeListedTokens(minExchanges = 1): Promise<{ succ
                             marketCap: data.marketCap,
                             volume24h: data.volume24h,
                             priceChange24h: data.priceChange24h,
+                            priceChange7d: data.priceChange7d,
+                            fdv: fdv,
+                            totalSupply: data.totalSupply,
+                            circulatingSupply: data.circulatingSupply,
+                            maxSupply: data.maxSupply,
                             exchange: exchangeInfo.exchanges.join(','),
+                            lastPriceUpdate: new Date(),
+                            dataSource: 'coinlore',
                             createdAt: new Date(),
                             updatedAt: new Date()
                         }
@@ -481,11 +500,75 @@ export async function recordPriceHistory(): Promise<{ success: number, errors: s
     return result;
 }
 
+/**
+ * Initialize Chain table with supported chains
+ */
+export async function initializeChains(): Promise<{ success: number }> {
+    const chains = [
+        { id: 'solana', name: 'Solana', nativeToken: 'SOL', explorerUrl: 'https://solscan.io', priority: 1 },
+        { id: 'ethereum', name: 'Ethereum', nativeToken: 'ETH', explorerUrl: 'https://etherscan.io', priority: 2 },
+        { id: 'bsc', name: 'BNB Smart Chain', nativeToken: 'BNB', explorerUrl: 'https://bscscan.com', priority: 3 },
+        { id: 'arbitrum', name: 'Arbitrum', nativeToken: 'ETH', explorerUrl: 'https://arbiscan.io', priority: 4 },
+        { id: 'base', name: 'Base', nativeToken: 'ETH', explorerUrl: 'https://basescan.org', priority: 5 },
+        { id: 'polygon', name: 'Polygon', nativeToken: 'MATIC', explorerUrl: 'https://polygonscan.com', priority: 6 },
+        { id: 'avalanche', name: 'Avalanche', nativeToken: 'AVAX', explorerUrl: 'https://snowtrace.io', priority: 7 },
+    ];
+
+    let success = 0;
+    for (const chain of chains) {
+        try {
+            await prisma.chain.upsert({
+                where: { id: chain.id },
+                update: chain,
+                create: { ...chain, isActive: true }
+            });
+            success++;
+        } catch (error: any) {
+            logger.error(`Failed to upsert chain ${chain.id}: ${error.message}`);
+        }
+    }
+
+    logger.info(`✅ Initialized ${success} chains`);
+    return { success };
+}
+
+/**
+ * Initialize DataSourceHealth table
+ */
+export async function initializeDataSourceHealth(): Promise<{ success: number }> {
+    const sources = [
+        { id: 'coinpaprika', name: 'CoinPaprika' },
+        { id: 'coinlore', name: 'CoinLore' },
+        { id: 'birdeye', name: 'Birdeye' },
+        { id: 'helius', name: 'Helius' },
+        { id: 'solana-rpc', name: 'Solana RPC' },
+    ];
+
+    let success = 0;
+    for (const source of sources) {
+        try {
+            await prisma.dataSourceHealth.upsert({
+                where: { id: source.id },
+                update: { name: source.name, lastCheck: new Date() },
+                create: { id: source.id, name: source.name, status: 'healthy' }
+            });
+            success++;
+        } catch (error: any) {
+            logger.error(`Failed to upsert data source ${source.id}: ${error.message}`);
+        }
+    }
+
+    logger.info(`✅ Initialized ${success} data sources`);
+    return { success };
+}
+
 export default {
     populateTokenHeadersFromCoinPaprika,
     updateTokenPricesFromCoinCap,
     syncExchangeListedTokens,
     populateContractAddresses,
     populateOnChainAnalytics,
-    recordPriceHistory
+    recordPriceHistory,
+    initializeChains,
+    initializeDataSourceHealth
 };

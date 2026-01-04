@@ -10,6 +10,7 @@ import {
   refreshExchangeTokens,
   refreshContractAddresses,
   refreshOnChainAnalytics,
+  initializeDatabase,
   getTokenHistory,
   populateHeader,
   populateDetail,
@@ -30,6 +31,7 @@ router.post('/refresh-alternative', refreshTokensAlternative); // Uses CoinPapri
 router.post('/refresh-exchange', refreshExchangeTokens); // Only tokens listed on Binance, Bybit, HTX, MEXC, Gate.io
 router.post('/refresh-contracts', refreshContractAddresses); // Populate contract addresses from CoinPaprika
 router.post('/refresh-onchain', refreshOnChainAnalytics); // Populate on-chain analytics (liquidity, holders)
+router.post('/initialize', initializeDatabase); // Initialize Chain and DataSourceHealth tables
 router.post('/populate-header', populateHeader);
 router.post('/populate-exchange-tokens', populateExchangeTokens);
 router.post('/populate-detail', populateDetail);

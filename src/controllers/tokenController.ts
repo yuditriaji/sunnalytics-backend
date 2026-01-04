@@ -6,7 +6,7 @@ import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 import { withDatabase } from '../services/database';
-import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens, populateContractAddresses, populateOnChainAnalytics } from '../services/alternativeDataService';
+import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens, populateContractAddresses, populateOnChainAnalytics, initializeChains, initializeDataSourceHealth } from '../services/alternativeDataService';
 import axios from 'axios';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
@@ -247,6 +247,36 @@ export async function refreshOnChainAnalytics(req: Request, res: Response) {
     logger.error(`On-chain analytics failed: ${error.message}`);
     res.status(500).json({
       error: 'On-chain analytics failed',
+      message: error.message,
+      status: 'failed'
+    });
+  }
+}
+
+/**
+ * Initialize database tables (Chain, DataSourceHealth)
+ * Run this once to set up reference data
+ */
+export async function initializeDatabase(req: Request, res: Response) {
+  try {
+    logger.info('🔧 Initializing database tables...');
+
+    const chainsResult = await initializeChains();
+    const sourcesResult = await initializeDataSourceHealth();
+
+    res.json({
+      message: 'Database initialized successfully',
+      status: 'success',
+      result: {
+        chains: chainsResult.success,
+        dataSources: sourcesResult.success
+      }
+    });
+
+  } catch (error: any) {
+    logger.error(`Database initialization failed: ${error.message}`);
+    res.status(500).json({
+      error: 'Database initialization failed',
       message: error.message,
       status: 'failed'
     });

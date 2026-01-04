@@ -23,6 +23,10 @@ export interface MarketData {
     marketCap: number;
     volume24h: number;
     priceChange24h: number;
+    priceChange7d?: number;
+    totalSupply?: number;
+    circulatingSupply?: number;
+    maxSupply?: number;
 }
 
 export interface ContractInfo {
@@ -85,6 +89,10 @@ export async function fetchMarketDataBatch(limit = 2000): Promise<MarketData[]> 
                 marketCap: parseFloat(asset.market_cap_usd) || 0,
                 volume24h: parseFloat(asset.volume24) || 0,
                 priceChange24h: parseFloat(asset.percent_change_24h) || 0,
+                priceChange7d: parseFloat(asset.percent_change_7d) || 0,
+                totalSupply: parseFloat(asset.tsupply) || undefined,
+                circulatingSupply: parseFloat(asset.csupply) || undefined,
+                maxSupply: parseFloat(asset.msupply) || undefined,
             }));
 
             allData.push(...marketData);
