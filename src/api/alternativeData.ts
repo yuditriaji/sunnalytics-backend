@@ -81,19 +81,27 @@ export async function fetchMarketDataBatch(limit = 2000): Promise<MarketData[]> 
             });
 
             const assets = response.data.data || [];
-            const marketData = assets.map((asset: any) => ({
-                id: asset.nameid || asset.id,
-                symbol: asset.symbol.toLowerCase(),
-                name: asset.name,
-                price: parseFloat(asset.price_usd) || 0,
-                marketCap: parseFloat(asset.market_cap_usd) || 0,
-                volume24h: parseFloat(asset.volume24) || 0,
-                priceChange24h: parseFloat(asset.percent_change_24h) || 0,
-                priceChange7d: parseFloat(asset.percent_change_7d) || 0,
-                totalSupply: parseFloat(asset.tsupply) || undefined,
-                circulatingSupply: parseFloat(asset.csupply) || undefined,
-                maxSupply: parseFloat(asset.msupply) || undefined,
-            }));
+            const marketData = assets.map((asset: any) => {
+                const parseSupply = (value: any): number | undefined => {
+                    if (!value || value === '' || value === null) return undefined;
+                    const parsed = parseFloat(value);
+                    return isNaN(parsed) ? undefined : parsed;
+                };
+
+                return {
+                    id: asset.nameid || asset.id,
+                    symbol: asset.symbol.toLowerCase(),
+                    name: asset.name,
+                    price: parseFloat(asset.price_usd) || 0,
+                    marketCap: parseFloat(asset.market_cap_usd) || 0,
+                    volume24h: parseFloat(asset.volume24) || 0,
+                    priceChange24h: parseFloat(asset.percent_change_24h) || 0,
+                    priceChange7d: parseFloat(asset.percent_change_7d) || 0,
+                    totalSupply: parseSupply(asset.tsupply),
+                    circulatingSupply: parseSupply(asset.csupply),
+                    maxSupply: parseSupply(asset.msupply),
+                };
+            });
 
             allData.push(...marketData);
 
