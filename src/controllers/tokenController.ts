@@ -6,6 +6,7 @@ import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 import { withDatabase } from '../services/database';
+import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap } from '../services/alternativeDataService';
 import axios from 'axios';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
@@ -95,7 +96,52 @@ export async function refreshTokens(req: Request, res: Response) {
       message: error.message,
       status: 'failed'
     });
-    res.status(500).json({ error: 'Failed to refresh tokens' });
+  }
+}
+
+/**
+ * Alternative refresh using CoinPaprika/CoinCap (no rate limits)
+ * Use this when CoinGecko is rate limited
+ */
+export async function refreshTokensAlternative(req: Request, res: Response) {
+  try {
+    logger.info('🚀 Starting alternative data pipeline (CoinPaprika/CoinCap - no rate limits)');
+
+    const startTime = Date.now();
+
+    // Populate token headers from CoinPaprika
+    const headerResult = await populateTokenHeadersFromCoinPaprika();
+
+    // Update prices from CoinCap
+    const priceResult = await updateTokenPricesFromCoinCap();
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+
+    res.json({
+      message: 'Alternative data pipeline completed successfully',
+      status: 'success',
+      duration: `${duration}s`,
+      sources: {
+        tokenHeaders: {
+          source: 'CoinPaprika',
+          success: headerResult.success,
+          errors: headerResult.errors.length
+        },
+        marketData: {
+          source: 'CoinCap',
+          success: priceResult.success,
+          errors: priceResult.errors.length
+        }
+      }
+    });
+
+  } catch (error: any) {
+    logger.error(`Alternative data pipeline failed: ${error.message}`);
+    res.status(500).json({
+      error: 'Alternative data pipeline failed',
+      message: error.message,
+      status: 'failed'
+    });
   }
 }
 

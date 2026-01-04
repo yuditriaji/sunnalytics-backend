@@ -6,6 +6,7 @@ import {
   updateToken,
   deleteToken,
   refreshTokens,
+  refreshTokensAlternative,
   getTokenHistory,
   populateHeader,
   populateDetail,
@@ -22,6 +23,7 @@ router.post('/', createToken);
 router.put('/:id', updateToken);
 router.delete('/:id', deleteToken);
 router.post('/refresh', refreshTokens);
+router.post('/refresh-alternative', refreshTokensAlternative); // Uses CoinPaprika/CoinCap (no rate limits)
 router.post('/populate-header', populateHeader);
 router.post('/populate-exchange-tokens', populateExchangeTokens);
 router.post('/populate-detail', populateDetail);
