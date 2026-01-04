@@ -459,8 +459,8 @@ class ComprehensiveDataPipeline {
     const tokensWithContracts = await prisma.token.findMany({
       where: {
         AND: [
-          { contractAddress: { not: null } },
-          { chain: { not: null } }
+          { NOT: { contractAddress: null } },
+          { NOT: { chain: null } }
         ]
       },
       select: { id: true, symbol: true, contractAddress: true, chain: true },
