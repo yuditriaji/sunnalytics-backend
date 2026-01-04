@@ -12,6 +12,7 @@ import walletRoutes from './routes/wallet.routes';
 import cexRoutes from './routes/cex.routes';
 import { validateEnhancedEnv } from './utils/enhancedValidation';
 import { dataQualityMonitor } from './services/dataQuality';
+import { initScheduler, getSchedulerStatus } from './services/scheduler';
 
 dotenv.config();
 validateEnhancedEnv();
@@ -61,7 +62,8 @@ app.get('/api/health', async (_: Request, res: Response) => {
       timestamp: new Date().toISOString(),
       services: healthStatuses,
       uptime: process.uptime(),
-      rateLimiter: rateLimiterStatus
+      rateLimiter: rateLimiterStatus,
+      scheduler: getSchedulerStatus()
     });
   } catch (error: any) {
     res.status(503).json({
@@ -110,7 +112,14 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  logger.info(`Server running on port ${PORT}`);
+
+  // Initialize scheduler for automatic data refresh
+  if (process.env.ENABLE_SCHEDULER !== 'false') {
+    initScheduler();
+  }
+});
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
