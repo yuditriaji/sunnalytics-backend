@@ -207,9 +207,90 @@ export async function fetchTokensOnMultipleExchanges(minExchanges = 2): Promise<
     return allTokens.filter(t => t.exchanges.length >= minExchanges);
 }
 
+export interface ContractInfo {
+    symbol: string;
+    chain: string;
+    contractAddress: string;
+}
+
+// Chain name mapping from Gate.io to our schema
+const GATEIO_CHAIN_MAP: Record<string, string> = {
+    'ETH': 'ethereum',
+    'BSC': 'bsc',
+    'SOL': 'solana',
+    'ARBITRUM': 'arbitrum',
+    'BASE': 'base',
+    'MATIC': 'polygon',
+    'POLYGON': 'polygon',
+    'AVAX': 'avalanche',
+    'AVAXC': 'avalanche',
+    'TRX': 'tron',
+    'OP': 'optimism',
+    'OPTIMISM': 'optimism',
+};
+
+/**
+ * Fetch contract addresses from Gate.io currencies API
+ * Returns a map of symbol -> { chain, contractAddress }
+ */
+export async function fetchGateioContractAddresses(): Promise<Map<string, ContractInfo>> {
+    const contracts = new Map<string, ContractInfo>();
+
+    try {
+        logger.info('📍 Fetching contract addresses from Gate.io...');
+
+        const response = await axios.get('https://api.gateio.ws/api/v4/spot/currencies', {
+            timeout: 60000
+        });
+
+        const currencies = response.data || [];
+
+        for (const currency of currencies) {
+            if (currency.delisted) continue;
+
+            const symbol = currency.currency.toLowerCase();
+            const chains = currency.chains || [];
+
+            // Find the best chain (prefer ETH, then SOL, then BSC)
+            let bestChain = null;
+            const chainPriority = ['ETH', 'SOL', 'BSC', 'ARBITRUM', 'BASE', 'MATIC'];
+
+            for (const preferred of chainPriority) {
+                const found = chains.find((c: any) => c.name === preferred && c.addr);
+                if (found) {
+                    bestChain = found;
+                    break;
+                }
+            }
+
+            // If no preferred chain, take any chain with an address
+            if (!bestChain) {
+                bestChain = chains.find((c: any) => c.addr && c.addr.length > 10);
+            }
+
+            if (bestChain && bestChain.addr) {
+                const chainName = GATEIO_CHAIN_MAP[bestChain.name] || bestChain.name.toLowerCase();
+                contracts.set(symbol, {
+                    symbol,
+                    chain: chainName,
+                    contractAddress: bestChain.addr
+                });
+            }
+        }
+
+        logger.info(`✅ Gate.io: Found ${contracts.size} contract addresses`);
+
+    } catch (error: any) {
+        logger.error(`Gate.io contract fetch failed: ${error.message}`);
+    }
+
+    return contracts;
+}
+
 export default {
     fetchAllExchangeTokens,
     fetchTokensOnMultipleExchanges,
+    fetchGateioContractAddresses,
     fetchBinanceTokens,
     fetchBybitTokens,
     fetchHTXTokens,

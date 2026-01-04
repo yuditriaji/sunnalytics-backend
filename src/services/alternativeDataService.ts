@@ -279,64 +279,108 @@ export async function syncExchangeListedTokens(minExchanges = 1): Promise<{ succ
 
 /**
  * Populate contract addresses for existing tokens
- * Fetches from CoinPaprika and updates Token records
+ * Primary source: Gate.io (has ~2000+ contracts)
+ * Fallback: CoinPaprika
  */
 export async function populateContractAddresses(): Promise<{ success: number, errors: string[] }> {
     const result = { success: 0, errors: [] as string[] };
 
     try {
-        logger.info('📍 Populating contract addresses from CoinPaprika...');
+        logger.info('📍 Populating contract addresses...');
 
-        // Get symbol to CoinPaprika ID mapping
-        const symbolToId = await getSymbolToIdMap();
+        // Step 1: Fetch all contract addresses from Gate.io
+        const { fetchGateioContractAddresses } = await import('../api/exchangeTokens');
+        const gateioContracts = await fetchGateioContractAddresses();
+        logger.info(`Gate.io provides ${gateioContracts.size} contract addresses`);
 
-        // Get all tokens without contract address
+        // Step 2: Get all tokens
         const tokens = await prisma.token.findMany({
+            select: { id: true, symbol: true, contractAddress: true }
+        });
+
+        logger.info(`Processing ${tokens.length} tokens`);
+
+        // Step 3: Update tokens with Gate.io contract info
+        let gateioUpdates = 0;
+        for (const token of tokens) {
+            const contract = gateioContracts.get(token.symbol.toLowerCase());
+
+            if (contract && contract.contractAddress) {
+                // Only update if no contract or Gate.io has better data
+                if (!token.contractAddress) {
+                    try {
+                        await prisma.token.update({
+                            where: { id: token.id },
+                            data: {
+                                chain: contract.chain,
+                                contractAddress: contract.contractAddress,
+                                updatedAt: new Date()
+                            }
+                        });
+                        gateioUpdates++;
+                        result.success++;
+                    } catch (error: any) {
+                        result.errors.push(`Token ${token.symbol}: ${error.message}`);
+                    }
+                }
+            }
+
+            if (gateioUpdates % 100 === 0 && gateioUpdates > 0) {
+                logger.info(`Progress: ${gateioUpdates} tokens updated from Gate.io`);
+            }
+        }
+
+        logger.info(`✅ Gate.io: Updated ${gateioUpdates} tokens with contract addresses`);
+
+        // Step 4: Fall back to CoinPaprika for remaining tokens
+        const tokensWithoutContract = await prisma.token.findMany({
             where: { contractAddress: null },
             select: { id: true, symbol: true }
         });
 
-        logger.info(`Found ${tokens.length} tokens without contract addresses`);
+        if (tokensWithoutContract.length > 0) {
+            logger.info(`🔄 Trying CoinPaprika for ${tokensWithoutContract.length} remaining tokens...`);
 
-        let processed = 0;
-        for (const token of tokens) {
-            const coinId = symbolToId.get(token.symbol.toLowerCase());
-            if (!coinId) continue;
+            const symbolToId = await getSymbolToIdMap();
+            let coinpaprikaUpdates = 0;
 
-            try {
-                const contracts = await fetchContractAddresses(coinId);
+            for (const token of tokensWithoutContract.slice(0, 100)) { // Limit to avoid rate limits
+                const coinId = symbolToId.get(token.symbol.toLowerCase());
+                if (!coinId) continue;
 
-                if (contracts.length > 0) {
-                    // Prefer Ethereum, then Solana, then others
-                    const preferred = contracts.find(c => c.chain === 'ethereum')
-                        || contracts.find(c => c.chain === 'solana')
-                        || contracts[0];
+                try {
+                    const contracts = await fetchContractAddresses(coinId);
 
-                    await prisma.token.update({
-                        where: { id: token.id },
-                        data: {
-                            chain: preferred.chain,
-                            contractAddress: preferred.contractAddress,
-                            updatedAt: new Date()
-                        }
-                    });
+                    if (contracts.length > 0) {
+                        const preferred = contracts.find(c => c.chain === 'ethereum')
+                            || contracts.find(c => c.chain === 'solana')
+                            || contracts[0];
 
-                    result.success++;
-                }
+                        await prisma.token.update({
+                            where: { id: token.id },
+                            data: {
+                                chain: preferred.chain,
+                                contractAddress: preferred.contractAddress,
+                                updatedAt: new Date()
+                            }
+                        });
 
-                processed++;
-                if (processed % 50 === 0) {
-                    logger.info(`Progress: ${processed}/${tokens.length} tokens processed, ${result.success} updated`);
+                        coinpaprikaUpdates++;
+                        result.success++;
+                    }
+
                     // Small delay to avoid rate limiting
-                    await new Promise(r => setTimeout(r, 100));
-                }
+                    await new Promise(r => setTimeout(r, 200));
 
-            } catch (error: any) {
-                result.errors.push(`Token ${token.symbol}: ${error.message}`);
+                } catch (error: any) {
+                    // Silently skip CoinPaprika errors
+                }
             }
+
+            logger.info(`✅ CoinPaprika: Updated ${coinpaprikaUpdates} additional tokens`);
         }
 
-        logger.info(`✅ Contract addresses populated: ${result.success} updated`);
+        logger.info(`✅ Total contract addresses populated: ${result.success}`);
 
     } catch (error: any) {
         logger.error(`Contract population failed: ${error.message}`);
