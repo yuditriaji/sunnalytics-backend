@@ -9,6 +9,7 @@ import userRoutes from './routes/user.routes';
 import alertRoutes from './routes/alert.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import walletRoutes from './routes/wallet.routes';
+import cexRoutes from './routes/cex.routes';
 import { validateEnhancedEnv } from './utils/enhancedValidation';
 import { dataQualityMonitor } from './services/dataQuality';
 
@@ -100,6 +101,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/wallets', walletRoutes);
+app.use('/api/exchanges', cexRoutes);
 
 // Error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
