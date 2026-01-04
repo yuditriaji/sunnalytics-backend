@@ -6,7 +6,7 @@ import { fetchBitqueryTokens, BitqueryToken } from '../api/bitquery';
 import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics, TokenMetrics } from '../utils/tokenAnalytics';
 import { withDatabase } from '../services/database';
-import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap } from '../services/alternativeDataService';
+import { populateTokenHeadersFromCoinPaprika, updateTokenPricesFromCoinCap, syncExchangeListedTokens } from '../services/alternativeDataService';
 import axios from 'axios';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
@@ -139,6 +139,46 @@ export async function refreshTokensAlternative(req: Request, res: Response) {
     logger.error(`Alternative data pipeline failed: ${error.message}`);
     res.status(500).json({
       error: 'Alternative data pipeline failed',
+      message: error.message,
+      status: 'failed'
+    });
+  }
+}
+
+/**
+ * Sync tokens that are listed on major CEX exchanges
+ * Only fetches tokens from: Binance, Bybit, HTX, MEXC, Gate.io
+ */
+export async function refreshExchangeTokens(req: Request, res: Response) {
+  try {
+    const minExchanges = parseInt(req.query.minExchanges as string) || 1;
+
+    logger.info(`🏦 Syncing tokens listed on ${minExchanges}+ exchanges...`);
+
+    const startTime = Date.now();
+
+    const result = await syncExchangeListedTokens(minExchanges);
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+
+    res.json({
+      message: 'Exchange-listed tokens synced successfully',
+      status: 'success',
+      duration: `${duration}s`,
+      filter: {
+        minExchanges,
+        exchanges: ['binance', 'bybit', 'htx', 'mexc', 'gateio']
+      },
+      result: {
+        success: result.success,
+        errors: result.errors.length
+      }
+    });
+
+  } catch (error: any) {
+    logger.error(`Exchange token sync failed: ${error.message}`);
+    res.status(500).json({
+      error: 'Exchange token sync failed',
       message: error.message,
       status: 'failed'
     });

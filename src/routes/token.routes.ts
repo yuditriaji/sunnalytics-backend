@@ -7,6 +7,7 @@ import {
   deleteToken,
   refreshTokens,
   refreshTokensAlternative,
+  refreshExchangeTokens,
   getTokenHistory,
   populateHeader,
   populateDetail,
@@ -23,7 +24,8 @@ router.post('/', createToken);
 router.put('/:id', updateToken);
 router.delete('/:id', deleteToken);
 router.post('/refresh', refreshTokens);
-router.post('/refresh-alternative', refreshTokensAlternative); // Uses CoinPaprika/CoinCap (no rate limits)
+router.post('/refresh-alternative', refreshTokensAlternative); // Uses CoinPaprika/CoinLore (no rate limits)
+router.post('/refresh-exchange', refreshExchangeTokens); // Only tokens listed on Binance, Bybit, HTX, MEXC, Gate.io
 router.post('/populate-header', populateHeader);
 router.post('/populate-exchange-tokens', populateExchangeTokens);
 router.post('/populate-detail', populateDetail);

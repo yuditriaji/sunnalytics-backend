@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { logger } from './logger';
 import { fetchTokenList, fetchMarketDataBatch } from '../api/alternativeData';
+import { fetchAllExchangeTokens, ExchangeToken } from '../api/exchangeTokens';
 
 const prisma = new PrismaClient() as any;
 
@@ -160,7 +161,104 @@ export async function updateTokenPricesFromCoinCap(): Promise<{ success: number,
     return result;
 }
 
+/**
+ * Sync tokens that are listed on major CEX exchanges
+ * Only creates tokens that exist on Binance, Bybit, HTX, MEXC, or Gate.io
+ */
+export async function syncExchangeListedTokens(minExchanges = 1): Promise<{ success: number, errors: string[] }> {
+    const result = { success: 0, errors: [] as string[] };
+
+    try {
+        logger.info('🏦 Fetching tokens from CEX exchanges...');
+
+        // Get all tokens from exchanges
+        const exchangeTokens = await fetchAllExchangeTokens();
+
+        // Filter by minimum exchanges
+        const filteredTokens = exchangeTokens.filter(t => t.exchanges.length >= minExchanges);
+        logger.info(`Found ${filteredTokens.length} tokens on ${minExchanges}+ exchanges`);
+
+        // Create lookup map by symbol
+        const exchangeBySymbol = new Map(
+            filteredTokens.map(t => [t.symbol.toLowerCase(), t])
+        );
+
+        // Fetch market data
+        logger.info('💰 Fetching market data from CoinLore...');
+        const marketData = await fetchMarketDataBatch(2000);
+
+        // Filter market data to only include exchange-listed tokens
+        const filteredMarket = marketData.filter(d =>
+            exchangeBySymbol.has(d.symbol.toLowerCase())
+        );
+
+        logger.info(`Matched ${filteredMarket.length} tokens with market data`);
+
+        // Create/update tokens
+        for (const data of filteredMarket) {
+            const exchangeInfo = exchangeBySymbol.get(data.symbol.toLowerCase());
+            if (!exchangeInfo) continue;
+
+            try {
+                const existingToken = await prisma.token.findFirst({
+                    where: { symbol: data.symbol.toLowerCase() }
+                });
+
+                if (existingToken) {
+                    await prisma.token.update({
+                        where: { id: existingToken.id },
+                        data: {
+                            name: data.name,
+                            price: data.price,
+                            marketCap: data.marketCap,
+                            volume24h: data.volume24h,
+                            priceChange24h: data.priceChange24h,
+                            exchange: exchangeInfo.exchanges.join(','),
+                            updatedAt: new Date()
+                        }
+                    });
+                } else {
+                    await prisma.token.create({
+                        data: {
+                            symbol: data.symbol.toLowerCase(),
+                            name: data.name,
+                            category: 'altcoin',
+                            price: data.price,
+                            marketCap: data.marketCap,
+                            volume24h: data.volume24h,
+                            priceChange24h: data.priceChange24h,
+                            exchange: exchangeInfo.exchanges.join(','),
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }
+                    });
+                }
+
+                result.success++;
+
+                if (result.success % 100 === 0) {
+                    logger.info(`Progress: ${result.success} tokens processed`);
+                }
+
+            } catch (error: any) {
+                result.errors.push(`Token ${data.symbol}: ${error.message}`);
+            }
+        }
+
+        logger.info(`✅ Exchange-listed tokens synced: ${result.success} successful`);
+
+    } catch (error: any) {
+        logger.error(`Exchange token sync failed: ${error.message}`);
+        result.errors.push(error.message);
+    } finally {
+        await prisma.$disconnect();
+    }
+
+    return result;
+}
+
 export default {
     populateTokenHeadersFromCoinPaprika,
-    updateTokenPricesFromCoinCap
+    updateTokenPricesFromCoinCap,
+    syncExchangeListedTokens
 };
