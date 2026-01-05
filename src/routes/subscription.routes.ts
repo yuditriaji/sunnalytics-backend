@@ -13,8 +13,9 @@ import { logger } from '../services/logger';
 const router = express.Router();
 const prisma = new PrismaClient() as any;
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+// Initialize Stripe only if key is provided
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+const stripe = stripeKey ? new Stripe(stripeKey) : null;
 
 // Price IDs (configure these in your Stripe dashboard)
 const PRICE_IDS: Record<string, string> = {
@@ -26,6 +27,9 @@ const PRICE_IDS: Record<string, string> = {
  * POST /api/subscription/create-checkout - Create Stripe checkout session
  */
 router.post('/create-checkout', requireAuth, syncUser, async (req: AuthenticatedRequest, res) => {
+    if (!stripe) {
+        return res.status(503).json({ error: 'Stripe not configured' });
+    }
     try {
         const { tier } = req.body;
 
@@ -87,6 +91,9 @@ router.post('/create-checkout', requireAuth, syncUser, async (req: Authenticated
  * POST /api/subscription/create-portal - Create Stripe billing portal
  */
 router.post('/create-portal', requireAuth, syncUser, async (req: AuthenticatedRequest, res) => {
+    if (!stripe) {
+        return res.status(503).json({ error: 'Stripe not configured' });
+    }
     try {
         const user = await prisma.user.findUnique({
             where: { id: req.user!.id },
@@ -113,6 +120,9 @@ router.post('/create-portal', requireAuth, syncUser, async (req: AuthenticatedRe
  * POST /api/subscription/webhook - Stripe webhook handler
  */
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    if (!stripe) {
+        return res.status(503).json({ error: 'Stripe not configured' });
+    }
     const sig = req.headers['stripe-signature'] as string;
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -216,7 +226,7 @@ router.get('/status', requireAuth, syncUser, async (req: AuthenticatedRequest, r
         }
 
         let cancelAtPeriodEnd = false;
-        if (user.subscriptionId) {
+        if (user.subscriptionId && stripe) {
             try {
                 const stripeSubscription = await stripe.subscriptions.retrieve(user.subscriptionId);
                 cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
