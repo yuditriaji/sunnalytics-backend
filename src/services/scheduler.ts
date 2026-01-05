@@ -138,7 +138,38 @@ export function initScheduler() {
     });
     logger.info('   ⏰ Price history: every hour (on the hour)');
 
+    // Calculate token scores every 4 hours
+    cron.schedule('0 */4 * * *', refreshTokenScoresJob, {
+        timezone: 'UTC'
+    });
+    logger.info('   ⏰ Token scores: every 4 hours');
+
     logger.info('✅ Scheduler initialized successfully');
+}
+
+let tokenScoresRunning = false;
+
+/**
+ * Refresh token scores (liquidity, wallet distribution, pump-dump risk)
+ * Runs every 4 hours
+ */
+async function refreshTokenScoresJob() {
+    if (tokenScoresRunning) {
+        logger.info('⏭️ Skipping token scores job - already running');
+        return;
+    }
+
+    tokenScoresRunning = true;
+    try {
+        logger.info('🔄 [CRON] Starting token scores calculation...');
+        const { populateTokenScores } = await import('./scoringService');
+        const result = await populateTokenScores();
+        logger.info(`✅ [CRON] Token scores calculated: ${result.success} updated, ${result.errors.length} errors`);
+    } catch (error: any) {
+        logger.error(`❌ [CRON] Token scores calculation failed: ${error.message}`);
+    } finally {
+        tokenScoresRunning = false;
+    }
 }
 
 /**
@@ -162,6 +193,10 @@ export function getSchedulerStatus() {
             priceHistory: {
                 schedule: 'every hour on the hour',
                 isRunning: isRunning.priceHistory
+            },
+            tokenScores: {
+                schedule: 'every 4 hours',
+                isRunning: tokenScoresRunning
             }
         }
     };

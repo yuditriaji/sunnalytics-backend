@@ -10,6 +10,7 @@ import {
   refreshExchangeTokens,
   refreshContractAddresses,
   refreshOnChainAnalytics,
+  refreshTokenScores,
   initializeDatabase,
   getTokenHistory,
   populateHeader,
@@ -29,8 +30,9 @@ router.delete('/:id', deleteToken);
 router.post('/refresh', refreshTokens);
 router.post('/refresh-alternative', refreshTokensAlternative); // Uses CoinPaprika/CoinLore (no rate limits)
 router.post('/refresh-exchange', refreshExchangeTokens); // Only tokens listed on Binance, Bybit, HTX, MEXC, Gate.io
-router.post('/refresh-contracts', refreshContractAddresses); // Populate contract addresses from CoinPaprika
+router.post('/refresh-contracts', refreshContractAddresses); // Populate contract addresses from Gate.io
 router.post('/refresh-onchain', refreshOnChainAnalytics); // Populate on-chain analytics (liquidity, holders)
+router.post('/refresh-scores', refreshTokenScores); // Calculate liquidity, wallet distribution, pump-dump risk scores
 router.post('/initialize', initializeDatabase); // Initialize Chain and DataSourceHealth tables
 router.post('/populate-header', populateHeader);
 router.post('/populate-exchange-tokens', populateExchangeTokens);

@@ -283,6 +283,39 @@ export async function initializeDatabase(req: Request, res: Response) {
   }
 }
 
+/**
+ * Calculate and populate token scores (liquidity, wallet distribution, pump-dump risk)
+ */
+export async function refreshTokenScores(req: Request, res: Response) {
+  try {
+    logger.info('📊 Starting token score calculation...');
+    const startTime = Date.now();
+
+    const { populateTokenScores } = await import('../services/scoringService');
+    const result = await populateTokenScores();
+
+    const duration = Math.round((Date.now() - startTime) / 1000);
+
+    res.json({
+      message: 'Token scores calculated successfully',
+      status: 'success',
+      duration: `${duration}s`,
+      result: {
+        updated: result.success,
+        errors: result.errors.length
+      }
+    });
+
+  } catch (error: any) {
+    logger.error(`Token score calculation failed: ${error.message}`);
+    res.status(500).json({
+      error: 'Token score calculation failed',
+      message: error.message,
+      status: 'failed'
+    });
+  }
+}
+
 async function updateTokenScores() {
   try {
     await withDatabase(async (prisma) => {
