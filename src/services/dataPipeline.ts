@@ -6,6 +6,7 @@ import { fetchMarketData, fetchExchangeTokens } from '../api/coingecko';
 import { fetchBitqueryTokens } from '../api/bitquery';
 import { fetchOnChainData } from '../api/onchain';
 import { calculateTokenMetrics } from '../utils/tokenAnalytics';
+import { getPrimaryContract, isMajorNativeToken } from '../utils/majorTokenContracts';
 import axios from 'axios';
 
 // Cast to any to avoid type conflicts during schema migration
@@ -301,8 +302,8 @@ class ComprehensiveDataPipeline {
                 marketCap: data.usd_market_cap,
                 volume24h: data.usd_24h_vol,
                 priceChange24h: data.usd_24h_change,
-                contractAddress: this.extractContractAddress(tokenHeader.platforms),
-                platform: this.extractPlatform(tokenHeader.platforms),
+                contractAddress: this.extractContractAddress(tokenHeader.platforms, tokenHeader.id),
+                platform: this.extractPlatform(tokenHeader.platforms, tokenHeader.id),
                 exchange: tokenHeader.exchange
               });
 
@@ -650,21 +651,38 @@ class ComprehensiveDataPipeline {
   }
 
   // Helper methods
-  private extractContractAddress(platforms: any): string | undefined {
+  private extractContractAddress(platforms: any, coingeckoId?: string): string | undefined {
+    // First, check if this is a major native token with known contracts
+    if (coingeckoId && isMajorNativeToken(coingeckoId)) {
+      const contract = getPrimaryContract(coingeckoId);
+      if (contract) {
+        logger.debug(`Using major token contract for ${coingeckoId}: ${contract.address} on ${contract.chain}`);
+        return contract.address;
+      }
+    }
+
     if (!platforms || typeof platforms !== 'object') return undefined;
 
     const supportedPlatforms = ['solana', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'avalanche', 'bnb'];
     for (const platform of supportedPlatforms) {
-      if (platforms[platform]) return platforms[platform];
+      if (platforms[platform] && platforms[platform].length > 0) return platforms[platform];
     }
     return undefined;
   }
 
-  private extractPlatform(platforms: any): string | undefined {
+  private extractPlatform(platforms: any, coingeckoId?: string): string | undefined {
+    // First, check if this is a major native token with known contracts
+    if (coingeckoId && isMajorNativeToken(coingeckoId)) {
+      const contract = getPrimaryContract(coingeckoId);
+      if (contract) {
+        return contract.chain;
+      }
+    }
+
     if (!platforms || typeof platforms !== 'object') return undefined;
 
     const supportedPlatforms = ['solana', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'avalanche', 'bnb'];
-    return supportedPlatforms.find(p => platforms[p]);
+    return supportedPlatforms.find(p => platforms[p] && platforms[p].length > 0);
   }
 
   private determineTokenCategory(symbol: string, data: any): string {
