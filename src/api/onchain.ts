@@ -113,16 +113,28 @@ async function fetchEtherscanTransfers(contractAddress: string) {
         params: {
           module: 'account',
           action: 'tokentx',
-          contractaddress: contractAddress,
+          address: contractAddress,  // Query transfers involving this contract
           startblock: startBlock,
           endblock: endBlock,
+          page: 1,
+          offset: 1000,  // Limit results to avoid huge responses
           sort: 'desc',
           apikey: ETHERSCAN_API_KEY,
         },
-        timeout: 5000,
+        timeout: 15000,
       });
       if (response.data.status === '1') return response.data.result;
-      logger.warn(`Etherscan transfers fetch failed for ${contractAddress}: ${response.data.message}`);
+
+      // Handle "No transactions found" as a valid empty result, not an error
+      const message = response.data.message || '';
+      const result = response.data.result || '';
+      if (message === 'No transactions found' || result === 'No transactions found' || message === 'NOTOK') {
+        logger.debug(`No Etherscan transfers found for ${contractAddress} in block range ${startBlock}-${endBlock}`);
+        return []; // Return empty array - this is valid, not an error
+      }
+
+      // Log full response for debugging actual errors
+      logger.warn(`Etherscan transfers fetch failed for ${contractAddress}: status=${response.data.status}, message=${message}, result=${result}`);
       await sleep(2000 + Math.random() * 2000);
     } catch (error: any) {
       logger.error(`Etherscan transfers attempt ${attempt} failed for ${contractAddress}: ${error.message}`);
