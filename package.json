@@ -38,6 +38,7 @@
     "node-cron": "^4.2.1",
     "node-telegram-bot-api": "^0.67.0",
     "nodemailer": "^7.0.12",
+    "openai": "^6.15.0",
     "stripe": "^20.1.0",
     "winston": "^3.16.0",
     "zod": "^3.25.49"
